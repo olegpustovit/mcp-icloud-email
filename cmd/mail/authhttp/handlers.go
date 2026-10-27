@@ -2,6 +2,7 @@ package authhttp
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	icloudimap "github.com/olegpustovit/mcp-icloud-email/imap"
@@ -236,7 +237,10 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 201, map[string]any{"client_id": id, "client_name": in.ClientName, "redirect_uris": in.RedirectURIs, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}})
 }
 
-var consent = template.Must(template.New("consent").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect iCloud Mail</title><style>body{font:17px system-ui;background:#f5f6f8;color:#182129;max-width:480px;margin:12vh auto;padding:28px}main{background:white;padding:32px;border-radius:20px}button,a{display:inline-block;padding:12px 20px;border-radius:9px}button{background:#2459d1;color:white;border:0;font:inherit;cursor:pointer}p{line-height:1.6}</style><main><h1>Connect iCloud Mail</h1><p><strong>{{.Name}}</strong> wants to access your connected iCloud mailbox as {{.Email}}.</p><p>This includes reading, sending, moving and deleting email. Only continue if you trust this app.</p><form method="post"><input type="hidden" name="consent" value="{{.Token}}"><button name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></form></main></html>`))
+//go:embed consent.html
+var consentHTML string
+
+var consent = template.Must(template.New("consent").Parse(consentHTML))
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -274,8 +278,13 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		// Preserve the form's Origin and prevent the proxy from rewriting the account email.
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Cache-Control", "no-store, no-transform")
+		callback, _ := url.Parse(redirect)
+		// Browsers also check form-action on redirects; escape CSP directive delimiters in client metadata.
+		callbackOrigin := strings.ReplaceAll(callback.Scheme+"://"+callback.Host, ";", "%3B")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+callbackOrigin+"; frame-ancestors 'none'; base-uri 'none'")
 		name := client.ClientName
 		if name == "" {
 			name = "Your AI assistant"

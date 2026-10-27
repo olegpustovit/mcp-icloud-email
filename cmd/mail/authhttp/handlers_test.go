@@ -89,11 +89,31 @@ func TestOAuthPKCEIntegration(t *testing.T) {
 	if rw.Code != 200 {
 		t.Fatal("consent page failed", rw.Code, rw.Body.String())
 	}
+	for header, want := range map[string]string{
+		"Referrer-Policy":         "same-origin",
+		"Cache-Control":           "no-store, no-transform",
+		"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://client.example.com; frame-ancestors 'none'; base-uri 'none'",
+	} {
+		if got := rw.Header().Get(header); got != want {
+			t.Errorf("consent %s = %q, want %q", header, got, want)
+		}
+	}
 	match := regexp.MustCompile(`name="consent" value="([^"]+)"`).FindStringSubmatch(rw.Body.String())
 	if len(match) != 2 {
 		t.Fatal("missing consent nonce")
 	}
 	form := url.Values{"consent": {match[1]}, "decision": {"allow"}}
+	for _, origin := range []string{"", "null", "https://evil.example"} {
+		r := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Origin", origin)
+		r.AddCookie(&http.Cookie{Name: "__Host-mail_session", Value: browserSession})
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("consent accepted origin %q: %d", origin, w.Code)
+		}
+	}
 	postConsent := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
 	postConsent.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	postConsent.Header.Set("Origin", "https://mail.example.com")
@@ -284,5 +304,21 @@ func TestMetadataAliasAndCORS(t *testing.T) {
 		if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "*" || w.Header().Get("Access-Control-Allow-Headers") == "" {
 			t.Fatalf("preflight %s: %d", path, w.Code)
 		}
+	}
+}
+
+func TestConsentEscapesClientMetadata(t *testing.T) {
+	var output strings.Builder
+	if err := consent.Execute(&output, struct{ Name, Email, Token string }{
+		`<script>alert("client")</script>`, "user@olegpustovit.com", `" autofocus onfocus="alert(1)`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	if strings.Contains(html, "<script>") || strings.Contains(html, `value="" autofocus`) {
+		t.Fatal("untrusted metadata was rendered as HTML")
+	}
+	if !strings.Contains(html, "user@olegpustovit.com") || !strings.Contains(html, "&lt;script&gt;") {
+		t.Fatal("missing escaped account or client identity")
 	}
 }

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect to {{.Name}} · Mail</title>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #202b24; background: #f5f4ef; font-synthesis: none; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 280px; min-height: 100vh; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
+    .brand { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 700; letter-spacing: -.5px; text-decoration: none; color: inherit; }
+    .brand-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: #dce8dc; color: #365a41; }
+    .brand span:last-child { margin-left: 3px; padding-left: 12px; border-left: 1px solid #d5d9d0; font-size: 13px; font-weight: 400; letter-spacing: 0; color: #637064; }
+    svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .layout { width: 100%; max-width: 460px; margin: auto 0; padding: 40px 0; }
+    main { padding: 32px; border: 1px solid #e0e3da; border-radius: 18px; background: #fff; box-shadow: 0 12px 36px #29382408; }
+    .connection { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 25px; }
+    .app-icon { display: grid; place-items: center; width: 54px; height: 54px; border: 1px solid #e3e7de; border-radius: 16px; color: #526355; background: #fafbf8; }
+    .app-icon.mail { color: #365a41; background: #edf3e9; border-color: #dfe8d9; }
+    .app-icon svg { width: 26px; height: 26px; }
+    .connection > svg { width: 18px; color: #8b988b; }
+    h1 { margin: 0; font-size: 25px; line-height: 1.25; letter-spacing: -.8px; font-weight: 650; text-align: center; overflow-wrap: anywhere; }
+    .intro { margin: 10px 0 25px; text-align: center; font-size: 14px; line-height: 1.6; color: #68736a; }
+    .account { display: flex; align-items: center; gap: 12px; padding: 13px 15px; background: #f6f7f2; border: 1px solid #e9ece3; border-radius: 9px; }
+    .account > svg { color: #637762; }
+    .account div { min-width: 0; }
+    .account-label { display: block; color: #6c776c; font-size: 11px; margin-bottom: 3px; }
+    .account-email { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+    h2 { margin: 26px 0 15px; font-size: 12px; font-weight: 600; color: #59655b; }
+    ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+    li { display: flex; gap: 12px; align-items: flex-start; }
+    li > svg { margin-top: 1px; color: #6b806c; width: 18px; height: 18px; }
+    li strong { display: block; font-size: 13px; font-weight: 600; line-height: 1.4; }
+    li p { margin: 3px 0 0; color: #69736b; font-size: 12px; line-height: 1.55; }
+    .trust { border-top: 1px solid #eceee7; margin: 25px 0 20px; padding-top: 18px; color: #70786f; font-size: 12px; line-height: 1.6; }
+    form { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; }
+    button { min-height: 44px; padding: 11px 14px; border: 1px solid #dce1d6; border-radius: 8px; font: 600 13px/1.4 ui-sans-serif, system-ui, sans-serif; color: #4e5e50; background: #fff; cursor: pointer; }
+    button:hover { background: #f4f6f0; }
+    .allow { background: #365a41; border-color: #365a41; color: #fff; }
+    .allow:hover { background: #294a34; border-color: #294a34; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #91ad83; outline-offset: 3px; }
+    footer { display: flex; align-items: center; justify-content: center; gap: 6px; color: #73806f; font-size: 11px; padding-top: 20px; }
+    footer svg { width: 13px; height: 13px; }
+    @media (max-width: 480px) { body { padding: 24px 16px; } .layout { padding: 28px 0; } main { padding: 26px 22px; } h1 { font-size: 23px; } }
+  </style>
+</head>
+<body>
+  <a class="brand" href="/" aria-label="Mail home">
+    <span class="brand-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg></span>
+    Mail <span>microapps</span>
+  </a>
+  <div class="layout">
+    <main>
+      <div class="connection" aria-hidden="true">
+        <div class="app-icon mail"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg></div>
+        <svg viewBox="0 0 24 24"><path d="M4 12h16m-5-5 5 5-5 5"/></svg>
+        <div class="app-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg></div>
+      </div>
+      <h1>Connect to {{.Name}}</h1>
+      <p class="intro">Give this app access to your iCloud Mail.</p>
+      <div class="account">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></svg>
+        <div><span class="account-label">Signed in as</span><span class="account-email">{{.Email}}</span></div>
+      </div>
+      <h2>This app will be able to:</h2>
+      <ul>
+        <li><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><div><strong>Read your mail</strong><p>Search messages, browse folders and open attachments.</p></div></li>
+        <li><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><div><strong>Send messages on your behalf</strong><p>Compose emails, create drafts and reply to conversations.</p></div></li>
+        <li><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><div><strong>Manage your mailbox</strong><p>Move and delete messages, change flags and create folders.</p></div></li>
+      </ul>
+      <p class="trust">Only allow access if you trust this app. Your iCloud app-specific password is never shared with it.</p>
+      <form method="post">
+        <input type="hidden" name="consent" value="{{.Token}}">
+        <button type="submit" name="decision" value="deny">Cancel</button>
+        <button type="submit" class="allow" name="decision" value="allow">Allow access</button>
+      </form>
+    </main>
+    <footer><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Secure connection through Mail</footer>
+  </div>
+</body>
+</html>
