@@ -53,7 +53,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	smtpClient := smtp.NewClient(cfg.ICloudEmail, cfg.ICloudPassword)
+	smtpClient := smtp.NewClient(cfg.ICloudEmail, cfg.ICloudPassword, imapClient.SaveSent)
 	server := mailmcp.New(func(context.Context) (mailmcp.Dependencies, error) {
 		return mailmcp.Dependencies{IMAP: imapClient, SMTP: smtpClient, FromEmail: cfg.ICloudEmail}, nil
 	}, version)

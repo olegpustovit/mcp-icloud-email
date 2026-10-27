@@ -60,6 +60,8 @@ go run .
 
 Use an app-specific password, never your main Apple account password. IMAP uses TLS on port 993; SMTP uses STARTTLS on port 587.
 
+Sent emails and replies are saved to the account’s Sent mailbox after SMTP accepts them, preserving the message and threading headers. Tool results include `saved_to_sent`. If filing the copy fails, the result still reports a successful send with a warning; do not resend the email. Sent copies confirm SMTP acceptance, not recipient delivery.
+
 ## Development and checks
 
 ```sh

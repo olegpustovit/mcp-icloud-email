@@ -651,6 +651,62 @@ func (c *Client) GetUsername() string {
 	return c.username
 }
 
+// SaveSent appends the exact SMTP message to the account's Sent mailbox.
+func (c *Client) SaveSent(ctx context.Context, raw []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	mailboxes := make(chan *imap.MailboxInfo, 10)
+	done := make(chan error, 1)
+	go func() { done <- c.client.List("", "*", mailboxes) }()
+	var folders []*imap.MailboxInfo
+	for mailbox := range mailboxes {
+		folders = append(folders, mailbox)
+	}
+	if err := <-done; err != nil {
+		return fmt.Errorf("list Sent mailbox: %w", err)
+	}
+	folder, err := sentFolder(folders)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := c.client.Append(folder, []string{imap.SeenFlag}, time.Now(), bytes.NewReader(raw)); err != nil {
+		return fmt.Errorf("append Sent copy: %w", err)
+	}
+	return nil
+}
+
+func sentFolder(folders []*imap.MailboxInfo) (string, error) {
+	var selectable []*imap.MailboxInfo
+	for _, folder := range folders {
+		noSelect, sent := false, false
+		for _, attr := range folder.Attributes {
+			noSelect = noSelect || strings.EqualFold(attr, `\Noselect`)
+			sent = sent || strings.EqualFold(attr, `\Sent`)
+		}
+		if noSelect {
+			continue
+		}
+		if sent {
+			return folder.Name, nil
+		}
+		selectable = append(selectable, folder)
+	}
+	for _, name := range []string{"Sent Messages", "Sent", "Sent Items", "INBOX.Sent Messages", "INBOX.Sent"} {
+		for _, folder := range selectable {
+			if strings.EqualFold(folder.Name, name) {
+				return folder.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("sent mailbox not found")
+}
+
 // SaveDraft saves an email as a draft in the Drafts folder
 func (c *Client) SaveDraft(ctx context.Context, from string, to []string, subject, body string, opts DraftOptions) (string, error) {
 	c.mu.Lock()

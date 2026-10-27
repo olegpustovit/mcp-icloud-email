@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -53,10 +52,7 @@ func ReplyEmailHandler(imapClient EmailReader, smtpClient EmailSender) func(cont
 		}
 
 		// Reply to the email
-		err = smtpClient.ReplyToEmail(ctx, originalEmail, body, replyAll, opts)
-		if err != nil {
-			return mutationError(ctx, "send reply", err), nil
-		}
+		sendErr := smtpClient.ReplyToEmail(ctx, originalEmail, body, replyAll, opts)
 
 		// Format response
 		replyType := "Reply"
@@ -70,11 +66,6 @@ func ReplyEmailHandler(imapClient EmailReader, smtpClient EmailSender) func(cont
 			"original_subject": originalEmail.Subject,
 		}
 
-		jsonData, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
-		}
-
-		return toolText(string(jsonData)), nil
+		return sentResult(ctx, "send reply", sendErr, response), nil
 	}
 }

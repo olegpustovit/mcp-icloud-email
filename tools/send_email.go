@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/olegpustovit/mcp-icloud-email/smtp"
@@ -58,9 +60,7 @@ func SendEmailHandler(smtpClient EmailSender, fromEmail string) func(context.Con
 		}
 
 		// Send email
-		if err := smtpClient.SendEmail(ctx, fromEmail, to, subject, body, opts); err != nil {
-			return mutationError(ctx, "send email", err), nil
-		}
+		sendErr := smtpClient.SendEmail(ctx, fromEmail, to, subject, body, opts)
 
 		// Format response
 		response := map[string]interface{}{
@@ -69,11 +69,23 @@ func SendEmailHandler(smtpClient EmailSender, fromEmail string) func(context.Con
 			"subject": subject,
 		}
 
-		jsonData, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
-		}
-
-		return toolText(string(jsonData)), nil
+		return sentResult(ctx, "send email", sendErr, response), nil
 	}
+}
+
+func sentResult(ctx context.Context, action string, err error, response map[string]interface{}) *mcp.CallToolResult {
+	var copyErr *smtp.SentCopyError
+	if err != nil && !errors.As(err, &copyErr) {
+		return mutationError(ctx, action, err)
+	}
+	response["saved_to_sent"] = copyErr == nil
+	if copyErr != nil {
+		slog.WarnContext(ctx, "email sent but Sent copy failed", "error", copyErr.Err)
+		response["warning"] = "SMTP accepted the email, but its Sent copy could not be saved. Do not resend; that would send a duplicate."
+	}
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return toolError(fmt.Sprintf("failed to format response: %v", err))
+	}
+	return toolText(string(jsonData))
 }

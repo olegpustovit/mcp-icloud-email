@@ -132,7 +132,7 @@ func newHandler(service *auth.Service, cache *mailcache.Store) (http.Handler, er
 		if err != nil {
 			return mailmcp.Dependencies{}, errors.New("iCloud connection failed; check your app-specific password")
 		}
-		return mailmcp.Dependencies{IMAP: cache.Wrap(client, email, address), SMTP: smtp.NewClient(address, password), FromEmail: address, Close: func() { _ = client.Close() }}, nil
+		return mailmcp.Dependencies{IMAP: cache.Wrap(client, email, address), SMTP: smtp.NewClient(address, password, client.SaveSent), FromEmail: address, Close: func() { _ = client.Close() }}, nil
 	}, version)
 	// The reverse proxy preserves the public Host; protect enforces that exact host and origin.
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, DisableLocalhostProtection: true, PropagateRequestCancellation: true, MaxRequestBodyBytes: 12 << 20})

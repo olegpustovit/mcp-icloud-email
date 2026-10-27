@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io"
+	"log/slog"
 	"net"
 	netmail "net/mail"
 	netsmtp "net/smtp"
@@ -26,6 +26,8 @@ const (
 type Client struct {
 	username string
 	password string
+	submit   func(context.Context, string, []string, []byte) error
+	saveSent func(context.Context, []byte) error
 }
 
 // SendOptions contains optional parameters for sending emails
@@ -37,12 +39,19 @@ type SendOptions struct {
 }
 
 // NewClient creates a new SMTP client
-func NewClient(username, password string) *Client {
-	return &Client{
-		username: username,
-		password: password,
-	}
+func NewClient(username, password string, saveSent func(context.Context, []byte) error) *Client {
+	c := &Client{username: username, password: password, saveSent: saveSent}
+	c.submit = c.send
+	return c
 }
+
+// SentCopyError means SMTP accepted the message; callers must not retry sending it.
+type SentCopyError struct{ Err error }
+
+func (e *SentCopyError) Error() string {
+	return "email sent, but saving the Sent copy failed: " + e.Err.Error()
+}
+func (e *SentCopyError) Unwrap() error { return e.Err }
 
 // SendEmail sends an email via SMTP
 func (c *Client) SendEmail(ctx context.Context, from string, to []string, subject, body string, opts SendOptions) error {
@@ -103,7 +112,7 @@ func (c *Client) SendEmail(ctx context.Context, from string, to []string, subjec
 	h.SetSubject(subject)
 
 	// Generate Message-ID
-	messageID := fmt.Sprintf("<%s.%s@%s>", uuid.New().String(), c.username, smtpServer)
+	messageID := fmt.Sprintf("<%s@%s>", uuid.New().String(), smtpServer)
 	h.Set("Message-ID", messageID)
 
 	// Set custom headers
@@ -182,8 +191,19 @@ func (c *Client) SendEmail(ctx context.Context, from string, to []string, subjec
 	recipients = append(recipients, opts.CC...)
 	recipients = append(recipients, opts.BCC...)
 
-	// Send via SMTP
-	return c.send(ctx, from, recipients, buf.Bytes())
+	if c.saveSent == nil {
+		return fmt.Errorf("sent mailbox storage is not configured")
+	}
+	if err := c.submit(ctx, from, recipients, buf.Bytes()); err != nil {
+		return err
+	}
+	// Finish filing an accepted message even if the requesting client disconnects.
+	archiveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := c.saveSent(archiveCtx, buf.Bytes()); err != nil {
+		return &SentCopyError{Err: err}
+	}
+	return nil
 }
 
 func (c *Client) send(ctx context.Context, from string, recipients []string, message []byte) error {
@@ -239,8 +259,9 @@ func (c *Client) send(ctx context.Context, from string, recipients []string, mes
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("SMTP delivery status unknown after message submission: %w", err)
 	}
-	if err := client.Quit(); err != nil && err != io.EOF {
-		return fmt.Errorf("SMTP accepted message but session shutdown failed: %w", err)
+	// DATA succeeded: a QUIT failure must not report a failed send or skip the Sent copy.
+	if err := client.Quit(); err != nil {
+		slog.WarnContext(ctx, "SMTP accepted message; session shutdown failed", "error", err)
 	}
 	return nil
 }
