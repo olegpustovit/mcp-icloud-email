@@ -3,14 +3,18 @@ package smtp
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
-	"net/smtp"
+	"io"
+	"net"
+	netmail "net/mail"
+	netsmtp "net/smtp"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-message/mail"
 	"github.com/google/uuid"
-	"github.com/rgabriel/mcp-icloud-email/imap"
+	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
 
 const (
@@ -42,6 +46,32 @@ func NewClient(username, password string) *Client {
 
 // SendEmail sends an email via SMTP
 func (c *Client) SendEmail(ctx context.Context, from string, to []string, subject, body string, opts SendOptions) error {
+	fromAddress, err := netmail.ParseAddress(from)
+	if err != nil || !strings.EqualFold(fromAddress.Address, c.username) {
+		return fmt.Errorf("from address must match the authenticated iCloud account")
+	}
+	to, err = envelopeAddresses(to)
+	if err != nil {
+		return fmt.Errorf("invalid recipient: %w", err)
+	}
+	opts.CC, err = envelopeAddresses(opts.CC)
+	if err != nil {
+		return fmt.Errorf("invalid CC recipient: %w", err)
+	}
+	opts.BCC, err = envelopeAddresses(opts.BCC)
+	if err != nil {
+		return fmt.Errorf("invalid BCC recipient: %w", err)
+	}
+	for key, value := range opts.Headers {
+		if !strings.EqualFold(key, "In-Reply-To") && !strings.EqualFold(key, "References") {
+			return fmt.Errorf("custom header %q is not allowed", key)
+		}
+		if strings.ContainsAny(value, "\r\n") {
+			return fmt.Errorf("header %q contains a line break", key)
+		}
+	}
+	from = fromAddress.Address
+
 	// Create message buffer
 	var buf bytes.Buffer
 
@@ -83,7 +113,6 @@ func (c *Client) SendEmail(ctx context.Context, from string, to []string, subjec
 
 	// Create message writer
 	var mw *mail.Writer
-	var err error
 
 	if opts.HTML {
 		// Multipart alternative for HTML and plain text
@@ -130,7 +159,7 @@ func (c *Client) SendEmail(ctx context.Context, from string, to []string, subjec
 		if err != nil {
 			return fmt.Errorf("failed to create message writer: %w", err)
 		}
-		
+
 		// Create inline part for plain text
 		var textHeader mail.InlineHeader
 		textHeader.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
@@ -154,14 +183,65 @@ func (c *Client) SendEmail(ctx context.Context, from string, to []string, subjec
 	recipients = append(recipients, opts.BCC...)
 
 	// Send via SMTP
+	return c.send(ctx, from, recipients, buf.Bytes())
+}
+
+func (c *Client) send(ctx context.Context, from string, recipients []string, message []byte) error {
 	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
-	auth := smtp.PlainAuth("", c.username, c.password, smtpServer)
-
-	err = smtp.SendMail(addr, auth, from, recipients, buf.Bytes())
+	dialer := net.Dialer{Timeout: 30 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+		return fmt.Errorf("failed to connect to SMTP server: %w", err)
 	}
-
+	defer func() { _ = conn.Close() }()
+	stopCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopCancel()
+	deadline := time.Now().Add(30 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("failed to set SMTP deadline: %w", err)
+	}
+	client, err := netsmtp.NewClient(conn, smtpServer)
+	if err != nil {
+		return fmt.Errorf("failed to start SMTP session: %w", err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := client.Hello("localhost"); err != nil {
+		return fmt.Errorf("SMTP greeting failed: %w", err)
+	}
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		return fmt.Errorf("SMTP server does not support required STARTTLS")
+	}
+	if err := client.StartTLS(&tls.Config{ServerName: smtpServer, MinVersion: tls.VersionTLS12}); err != nil {
+		return fmt.Errorf("SMTP TLS negotiation failed: %w", err)
+	}
+	if err := client.Auth(netsmtp.PlainAuth("", c.username, c.password, smtpServer)); err != nil {
+		return fmt.Errorf("SMTP authentication failed: %w", err)
+	}
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("SMTP sender rejected: %w", err)
+	}
+	for _, recipient := range recipients {
+		if err := client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("SMTP recipient rejected: %w", err)
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("SMTP message submission failed: %w", err)
+	}
+	if _, err := w.Write(message); err != nil {
+		_ = w.Close()
+		return fmt.Errorf("SMTP delivery status unknown after message write: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("SMTP delivery status unknown after message submission: %w", err)
+	}
+	if err := client.Quit(); err != nil && err != io.EOF {
+		return fmt.Errorf("SMTP accepted message but session shutdown failed: %w", err)
+	}
 	return nil
 }
 
@@ -169,18 +249,18 @@ func (c *Client) SendEmail(ctx context.Context, from string, to []string, subjec
 func (c *Client) ReplyToEmail(ctx context.Context, original *imap.Email, body string, replyAll bool, opts SendOptions) error {
 	// Build recipient list
 	to := []string{original.From}
-	
+
 	var cc []string
 	if replyAll {
 		// Add all To recipients except ourselves
 		for _, addr := range original.To {
-			if !strings.Contains(addr, c.username) {
+			if !isAccountAddress(addr, c.username) {
 				cc = append(cc, addr)
 			}
 		}
 		// Add all CC recipients except ourselves
 		for _, addr := range original.CC {
-			if !strings.Contains(addr, c.username) {
+			if !isAccountAddress(addr, c.username) {
 				cc = append(cc, addr)
 			}
 		}
@@ -201,7 +281,7 @@ func (c *Client) ReplyToEmail(ctx context.Context, original *imap.Email, body st
 	headers := make(map[string]string)
 	if original.MessageID != "" {
 		headers["In-Reply-To"] = original.MessageID
-		
+
 		// Build References header
 		refs := []string{}
 		if len(original.References) > 0 {
@@ -227,6 +307,23 @@ func (c *Client) ReplyToEmail(ctx context.Context, original *imap.Email, body st
 	return c.SendEmail(ctx, c.username, to, subject, body, sendOpts)
 }
 
+func envelopeAddresses(addresses []string) ([]string, error) {
+	result := make([]string, 0, len(addresses))
+	for _, raw := range addresses {
+		address, err := netmail.ParseAddress(raw)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, address.Address)
+	}
+	return result, nil
+}
+
+func isAccountAddress(raw, account string) bool {
+	address, err := netmail.ParseAddress(raw)
+	return err == nil && strings.EqualFold(address.Address, account)
+}
+
 // stripHTML removes HTML tags for plain text version (basic implementation)
 func stripHTML(html string) string {
 	// Simple HTML stripping - replace common tags with newlines
@@ -235,7 +332,7 @@ func stripHTML(html string) string {
 	text = strings.ReplaceAll(text, "<br />", "\n")
 	text = strings.ReplaceAll(text, "</p>", "\n\n")
 	text = strings.ReplaceAll(text, "</div>", "\n")
-	
+
 	// Remove remaining tags
 	inTag := false
 	var result strings.Builder
@@ -252,6 +349,6 @@ func stripHTML(html string) string {
 			result.WriteRune(char)
 		}
 	}
-	
+
 	return strings.TrimSpace(result.String())
 }

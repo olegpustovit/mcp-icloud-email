@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/rgabriel/mcp-icloud-email/imap"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
 
 // CountEmailsHandler creates a handler for counting emails
-func CountEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func CountEmailsHandler(client EmailReader) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get folder (default to INBOX)
 		folder, _ := args["folder"].(string)
@@ -36,7 +36,7 @@ func CountEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolRe
 		// Count emails
 		count, err := client.CountEmails(ctx, folder, filters)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to count emails: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to count emails: %v", err)), nil
 		}
 
 		// Format response
@@ -54,9 +54,9 @@ func CountEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolRe
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }

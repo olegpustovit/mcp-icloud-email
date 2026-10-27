@@ -5,18 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // MarkReadHandler creates a handler for marking emails as read/unread
-func MarkReadHandler(client EmailWriter) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func MarkReadHandler(client EmailWriter) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get required email_id
 		emailID, ok := args["email_id"].(string)
 		if !ok || emailID == "" {
-			return mcp.NewToolResultError("email_id is required"), nil
+			return toolError("email_id is required"), nil
 		}
 
 		// Get folder (default to INBOX)
@@ -34,7 +34,7 @@ func MarkReadHandler(client EmailWriter) func(context.Context, mcp.CallToolReque
 		// Mark email
 		err := client.MarkRead(ctx, folder, emailID, read)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to mark email: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to mark email: %v", err)), nil
 		}
 
 		// Format response
@@ -44,16 +44,16 @@ func MarkReadHandler(client EmailWriter) func(context.Context, mcp.CallToolReque
 		}
 
 		response := map[string]interface{}{
-			"success": true,
+			"success":  true,
 			"email_id": emailID,
-			"message": fmt.Sprintf("Email marked as %s successfully", status),
+			"message":  fmt.Sprintf("Email marked as %s successfully", status),
 		}
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }

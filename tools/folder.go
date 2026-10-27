@@ -5,28 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // CreateFolderHandler creates a handler for creating a new folder
-func CreateFolderHandler(client EmailWriter) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func CreateFolderHandler(client EmailWriter) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get folder name (required)
 		name, ok := args["name"].(string)
 		if !ok || name == "" {
-			return mcp.NewToolResultError("name parameter is required"), nil
+			return toolError("name parameter is required"), nil
 		}
 		if err := validateFolderName(name); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		// Get parent folder (optional)
 		parent, _ := args["parent"].(string)
 		if parent != "" {
 			if err := validateFolderName(parent); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("invalid parent: %v", err)), nil
+				return toolError(fmt.Sprintf("invalid parent: %v", err)), nil
 			}
 		}
 
@@ -38,7 +38,7 @@ func CreateFolderHandler(client EmailWriter) func(context.Context, mcp.CallToolR
 
 		// Create the folder
 		if err := client.CreateFolder(ctx, name, parent); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to create folder: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to create folder: %v", err)), nil
 		}
 
 		// Format response
@@ -51,25 +51,25 @@ func CreateFolderHandler(client EmailWriter) func(context.Context, mcp.CallToolR
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }
 
 // DeleteFolderHandler creates a handler for deleting a folder
-func DeleteFolderHandler(client EmailWriter) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func DeleteFolderHandler(client EmailWriter) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get folder name (required)
 		name, ok := args["name"].(string)
 		if !ok || name == "" {
-			return mcp.NewToolResultError("name parameter is required"), nil
+			return toolError("name parameter is required"), nil
 		}
 		if err := validateFolderName(name); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		// Get force flag (optional, default false)
@@ -91,9 +91,9 @@ func DeleteFolderHandler(client EmailWriter) func(context.Context, mcp.CallToolR
 					"message":     fmt.Sprintf("Folder '%s' is not empty (contains %d emails). Use force=true to delete anyway.", name, emailCount),
 				}
 				jsonData, _ := json.MarshalIndent(response, "", "  ")
-				return mcp.NewToolResultText(string(jsonData)), nil
+				return toolText(string(jsonData)), nil
 			}
-			return mcp.NewToolResultError(fmt.Sprintf("failed to delete folder: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to delete folder: %v", err)), nil
 		}
 
 		// Format success response
@@ -110,9 +110,9 @@ func DeleteFolderHandler(client EmailWriter) func(context.Context, mcp.CallToolR
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }

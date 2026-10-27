@@ -5,18 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // DeleteEmailHandler creates a handler for deleting emails
-func DeleteEmailHandler(client EmailWriter) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func DeleteEmailHandler(client EmailWriter) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get required email_id
 		emailID, ok := args["email_id"].(string)
 		if !ok || emailID == "" {
-			return mcp.NewToolResultError("email_id is required"), nil
+			return toolError("email_id is required"), nil
 		}
 
 		// Get folder (default to INBOX)
@@ -34,7 +34,7 @@ func DeleteEmailHandler(client EmailWriter) func(context.Context, mcp.CallToolRe
 		// Delete email
 		err := client.DeleteEmail(ctx, folder, emailID, permanent)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to delete email: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to delete email: %v", err)), nil
 		}
 
 		// Format response
@@ -51,9 +51,9 @@ func DeleteEmailHandler(client EmailWriter) func(context.Context, mcp.CallToolRe
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }

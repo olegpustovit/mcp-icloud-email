@@ -1,26 +1,36 @@
 package imap
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
-	"net/mail"
+	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
-	"github.com/google/uuid"
 	message "github.com/emersion/go-message/mail"
+	"github.com/google/uuid"
 )
 
 const (
-	imapServer = "imap.mail.me.com"
-	imapPort   = 993
-	timeout    = 30 * time.Second
+	imapServer     = "imap.mail.me.com"
+	imapPort       = 993
+	timeout        = 30 * time.Second
+	maxMessageSize = 20 << 20
 )
+
+func parseUID(id string) (uint32, error) {
+	uid, err := strconv.ParseUint(id, 10, 32)
+	if err != nil || uid == 0 {
+		return 0, fmt.Errorf("invalid email ID %q: expected a positive numeric UID", id)
+	}
+	return uint32(uid), nil
+}
 
 // Client wraps the IMAP client with iCloud-specific functionality
 type Client struct {
@@ -84,10 +94,11 @@ type EmailFilters struct {
 func NewClient(email, password string) (*Client, error) {
 	// Connect to iCloud IMAP server with TLS
 	addr := fmt.Sprintf("%s:%d", imapServer, imapPort)
-	c, err := client.DialTLS(addr, nil)
+	c, err := client.DialWithDialerTLS(&net.Dialer{Timeout: timeout}, addr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to IMAP server: %w", err)
 	}
+	c.Timeout = timeout
 
 	// Login
 	if err := c.Login(email, password); err != nil {
@@ -214,7 +225,7 @@ func (c *Client) SearchEmails(ctx context.Context, folder, query string, filters
 
 	emails := []Email{}
 	for msg := range messages {
-		email := c.parseMessageData(msg, false)
+		email := c.parseMessageData(msg)
 		if email != nil {
 			emails = append(emails, *email)
 		}
@@ -242,9 +253,9 @@ func (c *Client) getEmail(folder, emailID string) (*Email, error) {
 	}
 
 	// Parse UID
-	var uid uint32
-	if _, err := fmt.Sscanf(emailID, "%d", &uid); err != nil {
-		return nil, fmt.Errorf("invalid email ID format: %w", err)
+	uid, err := parseUID(emailID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create sequence set
@@ -254,18 +265,20 @@ func (c *Client) getEmail(folder, emailID string) (*Email, error) {
 	// Fetch full message
 	messages := make(chan *imap.Message, 1)
 	done := make(chan error, 1)
-	section := &imap.BodySectionName{}
+	section := &imap.BodySectionName{Peek: true, Partial: []int{0, maxMessageSize + 1}}
 	go func() {
 		done <- c.client.UidFetch(seqSet, []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchUid, section.FetchItem()}, messages)
 	}()
 
 	msg := <-messages
 	if msg == nil {
-		<-done
+		if err := <-done; err != nil {
+			return nil, fmt.Errorf("failed to fetch message: %w", err)
+		}
 		return nil, fmt.Errorf("email not found")
 	}
 
-	email := c.parseMessageData(msg, true)
+	email := c.parseMessageData(msg)
 
 	if err := <-done; err != nil {
 		return nil, fmt.Errorf("failed to fetch message: %w", err)
@@ -273,6 +286,21 @@ func (c *Client) getEmail(folder, emailID string) (*Email, error) {
 
 	if email == nil {
 		return nil, fmt.Errorf("failed to parse email")
+	}
+	var literal imap.Literal
+	for _, body := range msg.Body {
+		literal = body
+		break
+	}
+	if literal == nil {
+		return nil, fmt.Errorf("failed to get message body")
+	}
+	body, err := readBoundedBody(literal)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.parseEmailBody(email, bytes.NewReader(body)); err != nil {
+		return nil, fmt.Errorf("failed to parse email body: %w", err)
 	}
 
 	return email, nil
@@ -330,9 +358,9 @@ func (c *Client) MarkRead(ctx context.Context, folder, emailID string, read bool
 	}
 
 	// Parse UID
-	var uid uint32
-	if _, err := fmt.Sscanf(emailID, "%d", &uid); err != nil {
-		return fmt.Errorf("invalid email ID format: %w", err)
+	uid, err := parseUID(emailID)
+	if err != nil {
+		return err
 	}
 
 	// Create sequence set
@@ -346,7 +374,7 @@ func (c *Client) MarkRead(ctx context.Context, folder, emailID string, read bool
 	} else {
 		item = imap.FormatFlagsOp(imap.RemoveFlags, true)
 	}
-	
+
 	flags := []interface{}{imap.SeenFlag}
 	if err := c.client.UidStore(seqSet, item, flags, nil); err != nil {
 		return fmt.Errorf("failed to mark email: %w", err)
@@ -379,25 +407,15 @@ func (c *Client) moveEmail(fromFolder, toFolder, emailID string) error {
 	seqSet := new(imap.SeqSet)
 	seqSet.AddNum(uid)
 
-	// Try to use MOVE command (if supported)
-	// Otherwise fall back to COPY + DELETE
+	moveSupported, err := c.client.Support("MOVE")
+	if err != nil {
+		return fmt.Errorf("failed to check MOVE support: %w", err)
+	}
+	if !moveSupported {
+		return fmt.Errorf("server does not support safe MOVE; refusing copy/delete fallback")
+	}
 	if err := c.client.UidMove(seqSet, toFolder); err != nil {
-		// Fallback: Copy then mark as deleted
-		if err := c.client.UidCopy(seqSet, toFolder); err != nil {
-			return fmt.Errorf("failed to copy email: %w", err)
-		}
-
-		// Mark as deleted
-		item := imap.FormatFlagsOp(imap.AddFlags, true)
-		flags := []interface{}{imap.DeletedFlag}
-		if err := c.client.UidStore(seqSet, item, flags, nil); err != nil {
-			return fmt.Errorf("failed to mark email as deleted: %w", err)
-		}
-
-		// Expunge to remove it
-		if err := c.client.Expunge(nil); err != nil {
-			return fmt.Errorf("failed to expunge: %w", err)
-		}
+		return fmt.Errorf("failed to move email: %w", err)
 	}
 
 	return nil
@@ -415,14 +433,23 @@ func (c *Client) DeleteEmail(ctx context.Context, folder, emailID string, perman
 		}
 
 		// Parse UID
-		var uid uint32
-		if _, err := fmt.Sscanf(emailID, "%d", &uid); err != nil {
-			return fmt.Errorf("invalid email ID format: %w", err)
+		uid, err := parseUID(emailID)
+		if err != nil {
+			return err
 		}
 
 		// Create sequence set
 		seqSet := new(imap.SeqSet)
 		seqSet.AddNum(uid)
+
+		// UID EXPUNGE prevents removing other messages marked deleted by another client.
+		supported, err := c.client.Support("UIDPLUS")
+		if err != nil {
+			return fmt.Errorf("failed to check UIDPLUS support: %w", err)
+		}
+		if !supported {
+			return fmt.Errorf("server does not support safe permanent deletion (UIDPLUS required)")
+		}
 
 		// Mark as deleted
 		item := imap.FormatFlagsOp(imap.AddFlags, true)
@@ -432,7 +459,7 @@ func (c *Client) DeleteEmail(ctx context.Context, folder, emailID string, perman
 		}
 
 		// Expunge to permanently delete
-		if err := c.client.Expunge(nil); err != nil {
+		if err := c.expungeUID(uid); err != nil {
 			return fmt.Errorf("failed to expunge: %w", err)
 		}
 	} else {
@@ -450,8 +477,19 @@ func (c *Client) DeleteEmail(ctx context.Context, folder, emailID string, perman
 	return nil
 }
 
+// expungeUID removes only the requested deleted message; EXPUNGE would remove every deleted message in the mailbox.
+func (c *Client) expungeUID(uid uint32) error {
+	seqSet := new(imap.SeqSet)
+	seqSet.AddNum(uid)
+	status, err := c.client.Execute(&imap.Command{Name: "UID", Arguments: []interface{}{imap.RawString("EXPUNGE"), seqSet}}, nil)
+	if err != nil {
+		return err
+	}
+	return status.Err()
+}
+
 // parseMessageData parses IMAP message data into Email struct
-func (c *Client) parseMessageData(msg *imap.Message, fetchBody bool) *Email {
+func (c *Client) parseMessageData(msg *imap.Message) *Email {
 	if msg.Envelope == nil {
 		return nil
 	}
@@ -503,45 +541,27 @@ func (c *Client) parseMessageData(msg *imap.Message, fetchBody bool) *Email {
 		email.References = append(email.References, msg.Envelope.InReplyTo)
 	}
 
-	// Parse body if requested
-	if fetchBody {
-		for _, literal := range msg.Body {
-			c.parseEmailBody(email, literal)
-			break
-		}
+	// Create snippet from subject for preview.
+	if len(email.Subject) > 200 {
+		email.Snippet = email.Subject[:197] + "..."
 	} else {
-		// Create snippet from subject for preview
-		if len(email.Subject) > 200 {
-			email.Snippet = email.Subject[:197] + "..."
-		} else {
-			email.Snippet = email.Subject
-		}
+		email.Snippet = email.Subject
 	}
 
 	return email
 }
 
 // parseEmailBody parses the email body and attachments
-func (c *Client) parseEmailBody(email *Email, bodyLiteral imap.Literal) {
-	if bodyLiteral == nil {
-		return
-	}
-	
-	msg, err := mail.ReadMessage(bodyLiteral)
+func (c *Client) parseEmailBody(email *Email, rawMessage io.Reader) error {
+	// CreateReader needs the top-level MIME headers to resolve content type and boundary.
+	mr, err := message.CreateReader(rawMessage)
 	if err != nil {
-		slog.Warn("failed to read email message", "error", err)
-		return
+		return fmt.Errorf("failed to create message reader: %w", err)
 	}
 
-	// Parse the message using go-message
-	mr, err := message.CreateReader(msg.Body)
-	if err != nil {
-		slog.Warn("failed to create message reader", "error", err)
-		return
+	if err := c.processMessagePart(email, mr); err != nil {
+		return err
 	}
-
-	// Process message parts
-	c.processMessagePart(email, mr)
 
 	// Create snippet from plain text body
 	if email.BodyPlain != "" {
@@ -560,24 +580,38 @@ func (c *Client) parseEmailBody(email *Email, bodyLiteral imap.Literal) {
 			email.Snippet = snippet
 		}
 	}
+	return nil
+}
+
+func readBoundedBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxMessageSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read email body: %w", err)
+	}
+	if len(data) > maxMessageSize {
+		return nil, fmt.Errorf("email message exceeds maximum size of %d bytes", maxMessageSize)
+	}
+	return data, nil
 }
 
 // processMessagePart recursively processes message parts
-func (c *Client) processMessagePart(email *Email, mr *message.Reader) {
+func (c *Client) processMessagePart(email *Email, mr *message.Reader) error {
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			slog.Warn("failed to read message part", "error", err)
-			return
+			return fmt.Errorf("failed to read message part: %w", err)
 		}
 
 		switch h := part.Header.(type) {
 		case *message.InlineHeader:
 			contentType, _, _ := h.ContentType()
-			body, _ := io.ReadAll(part.Body)
+			body, err := io.ReadAll(part.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read message body part: %w", err)
+			}
 
 			if strings.HasPrefix(contentType, "text/plain") {
 				email.BodyPlain = string(body)
@@ -589,7 +623,10 @@ func (c *Client) processMessagePart(email *Email, mr *message.Reader) {
 			filename, _ := h.Filename()
 			if filename != "" {
 				// Count size without reading full content
-				size, _ := io.Copy(io.Discard, part.Body)
+				size, err := io.Copy(io.Discard, part.Body)
+				if err != nil {
+					return fmt.Errorf("failed to read attachment metadata: %w", err)
+				}
 				email.Attachments = append(email.Attachments, Attachment{
 					Filename: filename,
 					Size:     size,
@@ -598,6 +635,7 @@ func (c *Client) processMessagePart(email *Email, mr *message.Reader) {
 
 		}
 	}
+	return nil
 }
 
 // formatAddress formats an IMAP address into a string
@@ -627,7 +665,7 @@ func (c *Client) SaveDraft(ctx context.Context, from string, to []string, subjec
 	if err != nil {
 		return "", fmt.Errorf("failed to list folders: %w", err)
 	}
-	
+
 	for _, df := range draftFolders {
 		for _, f := range folders {
 			if f == df {
@@ -639,38 +677,38 @@ func (c *Client) SaveDraft(ctx context.Context, from string, to []string, subjec
 			break
 		}
 	}
-	
+
 	if draftFolder == "" {
 		draftFolder = "Drafts" // fallback default
 	}
 
 	// Build email message
 	var buf strings.Builder
-	
+
 	// Headers
-	buf.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(to, ", ")))
-	
+	buf.WriteString("From: " + from + "\r\n")
+	buf.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+
 	if len(opts.CC) > 0 {
-		buf.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(opts.CC, ", ")))
+		buf.WriteString("Cc: " + strings.Join(opts.CC, ", ") + "\r\n")
 	}
-	
+
 	if len(opts.BCC) > 0 {
-		buf.WriteString(fmt.Sprintf("Bcc: %s\r\n", strings.Join(opts.BCC, ", ")))
+		buf.WriteString("Bcc: " + strings.Join(opts.BCC, ", ") + "\r\n")
 	}
-	
+
 	// Handle reply headers if this is a reply draft
 	if opts.ReplyToID != "" {
 		folder := opts.Folder
 		if folder == "" {
 			folder = "INBOX"
 		}
-		
+
 		originalEmail, err := c.getEmail(folder, opts.ReplyToID)
 		if err != nil {
 			return "", fmt.Errorf("failed to get original email for reply: %w", err)
 		}
-		
+
 		// Build reply subject
 		var replySubject string
 		if !strings.HasPrefix(strings.ToLower(originalEmail.Subject), "re:") {
@@ -679,11 +717,11 @@ func (c *Client) SaveDraft(ctx context.Context, from string, to []string, subjec
 			replySubject = originalEmail.Subject
 		}
 		subject = replySubject
-		
+
 		// Add reply headers
 		if originalEmail.MessageID != "" {
-			buf.WriteString(fmt.Sprintf("In-Reply-To: %s\r\n", originalEmail.MessageID))
-			
+			buf.WriteString("In-Reply-To: " + originalEmail.MessageID + "\r\n")
+
 			// Build References
 			refs := originalEmail.References
 			if len(refs) == 0 && originalEmail.MessageID != "" {
@@ -692,45 +730,45 @@ func (c *Client) SaveDraft(ctx context.Context, from string, to []string, subjec
 				refs = append(refs, originalEmail.MessageID)
 			}
 			if len(refs) > 0 {
-				buf.WriteString(fmt.Sprintf("References: %s\r\n", strings.Join(refs, " ")))
+				buf.WriteString("References: " + strings.Join(refs, " ") + "\r\n")
 			}
 		}
 	}
-	
-	buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	buf.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))
-	
+
+	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")
+
 	// Generate Message-ID
 	messageID := fmt.Sprintf("<%s.%s@mcp-icloud-email>", uuid.New().String(), c.username)
-	buf.WriteString(fmt.Sprintf("Message-ID: %s\r\n", messageID))
-	
+	buf.WriteString("Message-ID: " + messageID + "\r\n")
+
 	// Content type
 	if opts.HTML {
 		buf.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	} else {
 		buf.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	}
-	
+
 	buf.WriteString("\r\n")
 	buf.WriteString(body)
-	
+
 	// Append to Drafts folder with \Draft flag
 	flags := []string{imap.DraftFlag}
 	date := time.Now()
-	
+
 	if err := c.client.Append(draftFolder, flags, date, strings.NewReader(buf.String())); err != nil {
 		return "", fmt.Errorf("failed to append draft: %w", err)
 	}
-	
+
 	// Get the UID of the appended message (select folder and get last message)
 	mbox, err := c.client.Select(draftFolder, false)
 	if err != nil {
 		return "", fmt.Errorf("failed to select draft folder: %w", err)
 	}
-	
+
 	// Return the last UID as the draft ID
 	draftID := fmt.Sprintf("%d", mbox.Messages)
-	
+
 	return draftID, nil
 }
 
@@ -745,9 +783,9 @@ func (c *Client) GetAttachment(ctx context.Context, folder, emailID, filename st
 	}
 
 	// Parse UID
-	var uid uint32
-	if _, err := fmt.Sscanf(emailID, "%d", &uid); err != nil {
-		return nil, fmt.Errorf("invalid email ID format: %w", err)
+	uid, err := parseUID(emailID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create sequence set
@@ -757,14 +795,16 @@ func (c *Client) GetAttachment(ctx context.Context, folder, emailID, filename st
 	// First, fetch BODYSTRUCTURE to find the attachment
 	messages := make(chan *imap.Message, 1)
 	done := make(chan error, 1)
-	
+
 	go func() {
 		done <- c.client.UidFetch(seqSet, []imap.FetchItem{imap.FetchBodyStructure}, messages)
 	}()
 
 	msg := <-messages
 	if msg == nil {
-		<-done
+		if err := <-done; err != nil {
+			return nil, fmt.Errorf("failed to fetch email structure: %w", err)
+		}
 		return nil, fmt.Errorf("email not found")
 	}
 
@@ -775,19 +815,21 @@ func (c *Client) GetAttachment(ctx context.Context, folder, emailID, filename st
 	// Parse BODYSTRUCTURE to find attachment part
 	// This is a simplified implementation - for production, you'd need more robust parsing
 	// For now, we'll fetch the entire message and parse it
-	
+
 	// Fetch full message body
 	messages2 := make(chan *imap.Message, 1)
 	done2 := make(chan error, 1)
-	section := &imap.BodySectionName{}
-	
+	section := &imap.BodySectionName{Peek: true, Partial: []int{0, maxMessageSize + 1}}
+
 	go func() {
 		done2 <- c.client.UidFetch(seqSet, []imap.FetchItem{section.FetchItem()}, messages2)
 	}()
 
 	msg2 := <-messages2
 	if msg2 == nil {
-		<-done2
+		if err := <-done2; err != nil {
+			return nil, fmt.Errorf("failed to fetch message body: %w", err)
+		}
 		return nil, fmt.Errorf("email not found")
 	}
 
@@ -805,14 +847,16 @@ func (c *Client) GetAttachment(ctx context.Context, folder, emailID, filename st
 	if bodyLiteral == nil {
 		return nil, fmt.Errorf("failed to get message body")
 	}
-
-	mailMsg, err := mail.ReadMessage(bodyLiteral)
+	body, err := readBoundedBody(bodyLiteral)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse email: %w", err)
+		return nil, err
 	}
 
-	// Parse using go-message
-	mr, err := message.CreateReader(mailMsg.Body)
+	return findAttachment(body, filename)
+}
+
+func findAttachment(rawMessage []byte, filename string) (*AttachmentData, error) {
+	mr, err := message.CreateReader(bytes.NewReader(rawMessage))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message reader: %w", err)
 	}
@@ -837,7 +881,7 @@ func (c *Client) GetAttachment(ctx context.Context, folder, emailID, filename st
 				}
 
 				mimeType, _, _ := h.ContentType()
-				
+
 				return &AttachmentData{
 					Filename: attachFilename,
 					Content:  content,
@@ -862,9 +906,9 @@ func (c *Client) FlagEmail(ctx context.Context, folder, emailID, flagType, color
 	}
 
 	// Parse UID
-	var uid uint32
-	if _, err := fmt.Sscanf(emailID, "%d", &uid); err != nil {
-		return fmt.Errorf("invalid email ID format: %w", err)
+	uid, err := parseUID(emailID)
+	if err != nil {
+		return err
 	}
 
 	// Create sequence set
@@ -886,7 +930,7 @@ func (c *Client) FlagEmail(ctx context.Context, folder, emailID, flagType, color
 			"$FlagBlue",
 			"$FlagPurple",
 		}
-		
+
 		// Try to remove flags (may fail if keywords not supported, which is ok)
 		_ = c.client.UidStore(seqSet, item, flags, nil)
 		return nil
@@ -894,7 +938,7 @@ func (c *Client) FlagEmail(ctx context.Context, folder, emailID, flagType, color
 
 	// Build flag list
 	flags := []interface{}{imap.FlaggedFlag}
-	
+
 	// Add flag type keyword
 	switch flagType {
 	case "follow-up":

@@ -13,18 +13,42 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27018:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build and test React UI
+        run: cd web && npm ci && npm test && npm run build
+
+      - name: Build hosted server
+        run: go build ./cmd/mail
 
       - name: Vet
         run: go vet ./...
 
       - name: Test with race detector
+        env:
+          MAIL_TEST_MONGODB_URI: mongodb://127.0.0.1:27018
         run: go test -race -v ./...
 
   lint:
@@ -36,7 +60,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.10'
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
@@ -50,7 +74,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.10'
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest

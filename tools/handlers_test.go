@@ -8,17 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	imappkg "github.com/rgabriel/mcp-icloud-email/imap"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	imappkg "github.com/olegpustovit/mcp-icloud-email/imap"
 )
 
 // req builds a mcp.CallToolRequest with the given arguments.
-func req(args map[string]interface{}) mcp.CallToolRequest {
-	return mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Arguments: args,
-		},
-	}
+func req(args map[string]interface{}) *mcp.CallToolRequest {
+	raw, _ := json.Marshal(args)
+	return &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Arguments: raw}}
 }
 
 // resultJSON unmarshals the text content of a successful result.
@@ -30,7 +27,7 @@ func resultJSON(t *testing.T, result *mcp.CallToolResult) map[string]interface{}
 	if len(result.Content) == 0 {
 		t.Fatal("expected content but got none")
 	}
-	text, ok := result.Content[0].(mcp.TextContent)
+	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent, got %T", result.Content[0])
 	}
@@ -50,7 +47,7 @@ func resultErrText(t *testing.T, result *mcp.CallToolResult) string {
 	if len(result.Content) == 0 {
 		return ""
 	}
-	text, ok := result.Content[0].(mcp.TextContent)
+	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent, got %T", result.Content[0])
 	}
@@ -96,6 +93,19 @@ func TestListFoldersHandler(t *testing.T) {
 				t.Errorf("count = %v, want %d", data["count"], len(tt.mock.Folders))
 			}
 		})
+	}
+}
+
+func TestGetAttachmentHandlerRejectsServerFilesystemWrite(t *testing.T) {
+	handler := GetAttachmentHandler(&MockEmailService{})
+	result, err := handler(context.Background(), req(map[string]interface{}{
+		"email_id": "1", "filename": "report.pdf", "save_path": "/etc/hosts",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if message := resultErrText(t, result); !strings.Contains(message, "unavailable on the server") {
+		t.Fatalf("unexpected error: %s", message)
 	}
 }
 

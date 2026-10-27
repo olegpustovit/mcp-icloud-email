@@ -30,3 +30,7 @@ go.work
 .DS_Store
 Thumbs.db
 docs/
+
+mail-server
+.env.*
+!.env.example

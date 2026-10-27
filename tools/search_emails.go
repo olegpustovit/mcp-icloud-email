@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/rgabriel/mcp-icloud-email/imap"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
 
 // SearchEmailsHandler creates a handler for searching emails
-func SearchEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func SearchEmailsHandler(client EmailReader) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get folder (default to INBOX)
 		folder, _ := args["folder"].(string)
@@ -57,7 +57,7 @@ func SearchEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolR
 		if sinceStr, ok := args["since"].(string); ok && sinceStr != "" {
 			t, err := time.Parse(time.RFC3339, sinceStr)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("invalid since format: %v (use ISO 8601 format like '2024-01-15T14:30:00Z')", err)), nil
+				return toolError(fmt.Sprintf("invalid since format: %v (use ISO 8601 format like '2024-01-15T14:30:00Z')", err)), nil
 			}
 			filters.Since = &t
 			filters.LastDays = 0 // Clear last_days when since is provided
@@ -67,7 +67,7 @@ func SearchEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolR
 		if beforeStr, ok := args["before"].(string); ok && beforeStr != "" {
 			t, err := time.Parse(time.RFC3339, beforeStr)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("invalid before format: %v (use ISO 8601 format like '2024-01-15T14:30:00Z')", err)), nil
+				return toolError(fmt.Sprintf("invalid before format: %v (use ISO 8601 format like '2024-01-15T14:30:00Z')", err)), nil
 			}
 			filters.Before = &t
 		}
@@ -75,7 +75,7 @@ func SearchEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolR
 		// Search emails
 		emails, total, err := client.SearchEmails(ctx, folder, query, filters)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to search emails: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to search emails: %v", err)), nil
 		}
 
 		// Format response
@@ -92,9 +92,9 @@ func SearchEmailsHandler(client EmailReader) func(context.Context, mcp.CallToolR
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }

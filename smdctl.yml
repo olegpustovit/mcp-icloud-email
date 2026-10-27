@@ -1,0 +1,7 @@
+name: mail
+command: /home/snowbear/ci/mail/mail-server
+workdir: /home/snowbear/ci/mail
+description: Multiuser iCloud Mail MCP
+restart: always
+private_tmp: true
+no_new_privileges: true

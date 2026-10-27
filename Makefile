@@ -2,10 +2,16 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 BINARY := mcp-icloud-email
 
-.PHONY: build test lint clean run vet
+.PHONY: build web server test lint clean run vet
 
 build:
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) .
+
+web:
+	cd web && npm ci && npm test && npm run build
+
+server: web
+	CGO_ENABLED=0 go build -o mail-server ./cmd/mail
 
 test:
 	go test -race ./...

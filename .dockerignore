@@ -1,0 +1,6 @@
+.git
+web/node_modules
+.env
+.env.*
+mail-server
+mcp-icloud-email

@@ -3,8 +3,8 @@ package tools
 import (
 	"context"
 
-	"github.com/rgabriel/mcp-icloud-email/imap"
-	smtppkg "github.com/rgabriel/mcp-icloud-email/smtp"
+	"github.com/olegpustovit/mcp-icloud-email/imap"
+	smtppkg "github.com/olegpustovit/mcp-icloud-email/smtp"
 )
 
 // EmailReader defines read-only IMAP operations.

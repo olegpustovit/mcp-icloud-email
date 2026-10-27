@@ -6,36 +6,36 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/rgabriel/mcp-icloud-email/imap"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
 
 // DraftEmailHandler creates a handler for saving email drafts
-func DraftEmailHandler(imapClient EmailWriter, fromEmail string) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func DraftEmailHandler(imapClient EmailWriter, fromEmail string) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get required parameters
 		subject, ok := args["subject"].(string)
 		if !ok || subject == "" {
-			return mcp.NewToolResultError("subject is required"), nil
+			return toolError("subject is required"), nil
 		}
 		if err := validateSubjectSize(subject); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		body, ok := args["body"].(string)
 		if !ok || body == "" {
-			return mcp.NewToolResultError("body is required"), nil
+			return toolError("body is required"), nil
 		}
 		if err := validateBodySize(body); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		// Parse and validate To addresses
 		to, err := requireAddressList(args, "to")
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		// Build draft options
@@ -44,13 +44,13 @@ func DraftEmailHandler(imapClient EmailWriter, fromEmail string) func(context.Co
 		// Parse CC addresses
 		opts.CC, err = parseAddressList(args, "cc")
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		// Parse BCC addresses
 		opts.BCC, err = parseAddressList(args, "bcc")
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolError(err.Error()), nil
 		}
 
 		// Parse HTML flag
@@ -71,17 +71,17 @@ func DraftEmailHandler(imapClient EmailWriter, fromEmail string) func(context.Co
 		// Save draft
 		draftID, err := imapClient.SaveDraft(ctx, fromEmail, to, subject, body, opts)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to save draft: %v", err)), nil
+			return mutationError(ctx, "save draft", err), nil
 		}
 
 		// Build preview string
 		var preview strings.Builder
-		preview.WriteString(fmt.Sprintf("To: %s\n", strings.Join(to, ", ")))
+		preview.WriteString("To: " + strings.Join(to, ", ") + "\n")
 		if len(opts.CC) > 0 {
-			preview.WriteString(fmt.Sprintf("CC: %s\n", strings.Join(opts.CC, ", ")))
+			preview.WriteString("CC: " + strings.Join(opts.CC, ", ") + "\n")
 		}
-		preview.WriteString(fmt.Sprintf("Subject: %s\n", subject))
-		preview.WriteString(fmt.Sprintf("Body: %s", body))
+		preview.WriteString("Subject: " + subject + "\n")
+		preview.WriteString("Body: " + body)
 
 		previewStr := preview.String()
 		if len(previewStr) > 200 {
@@ -102,9 +102,9 @@ func DraftEmailHandler(imapClient EmailWriter, fromEmail string) func(context.Co
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }

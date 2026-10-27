@@ -1,189 +1,79 @@
-# iCloud Email MCP Server
+# iCloud Mail MCP
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI assistants full access to Apple iCloud Mail through IMAP and SMTP. Search, read, send, reply, organize, and manage your iCloud mailbox -- all from Claude or any MCP-compatible client.
+Multiuser iCloud Mail for MCP clients, with a React settings dashboard, email/password login, and MongoDB persistence. Fork of [roygabriel/mcp-icloud-email](https://github.com/roygabriel/mcp-icloud-email).
 
-Built with Go and the [mcp-go SDK](https://mcp-go.dev). Ships as a single static binary for Linux, macOS, and Windows.
+## Hosted use
 
----
+Open https://mail.microapps.space, register, and verify your email. Registration is restricted to `*@olegpustovit.com` and `ursus95@gmail.com`. In settings, connect your iCloud address and an Apple **app-specific password** from https://account.apple.com. The server verifies the iCloud connection before saving it.
 
-## Table of Contents
+Add `https://mail.microapps.space/mcp` as a remote MCP server in your client and select OAuth authentication. Approve the client access request after signing in. Discovery, dynamic client registration, authorization code with PKCE, refresh tokens, and revocation are available. Client support depends on the client's remote MCP and OAuth capabilities; no iCloud password goes into client configuration.
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage with Claude Desktop](#usage-with-claude-desktop)
-- [Available Tools](#available-tools)
-- [Working with Large Inboxes](#working-with-large-inboxes)
-- [Development](#development)
-- [Architecture](#architecture)
-- [Security](#security)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
+Each client grant permits reading, sending, and organizing your connected mailbox, including destructive operations. Only approve clients you trust. Disconnecting iCloud removes stored mailbox credentials; signing out ends the browser session. Use password reset to revoke all existing browser and client access tokens.
 
----
+## Run the hosted server
 
-## Features
+Requires Go 1.26.10+, Node 22+, MongoDB, and a Resend sending key with a verified sender domain.
 
-**Email Operations**
-- Search and list emails with filters for date range, read status, and text queries
-- Retrieve full email content including body, headers, and attachment metadata
-- Send new emails with CC, BCC, and HTML support
-- Reply to emails with reply-all support
-- Save drafts for review before sending
-- Download attachments by filename (to disk or as base64)
-
-**Mailbox Management**
-- List, create, and delete mailbox folders (including nested folders)
-- Move emails between folders
-- Mark emails as read or unread
-- Flag emails for follow-up with customizable colors
-- Delete emails (move to trash or permanent)
-- Count emails matching filters without fetching content
-
-**Operational**
-- Thread-safe IMAP access with mutex protection
-- Structured JSON logging with UUID request correlation
-- 60-second timeout middleware on every tool call
-- Input validation: path traversal prevention, size limits, folder/ID sanitization
-- MCP tool annotations (read-only, destructive, idempotent) for client-side safety
-- CI pipeline with tests, linting, and vulnerability scanning
-
----
-
-## Quick Start
-
-```bash
-# Install
-go install github.com/rgabriel/mcp-icloud-email@latest
-
-# Set credentials (app-specific password, not your main iCloud password)
-export ICLOUD_EMAIL="you@icloud.com"
-export ICLOUD_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-
-# Run
-mcp-icloud-email
-```
-
-Or download a prebuilt binary from the [Releases](https://github.com/rgabriel/mcp-icloud-email/releases) page.
-
----
-
-## Prerequisites
-
-- **Go 1.21+** -- [install](https://go.dev/doc/install) (only needed when building from source)
-- **iCloud account** with two-factor authentication enabled
-- **App-specific password** -- required for IMAP/SMTP access
-
-### Generating an App-Specific Password
-
-1. Go to [appleid.apple.com](https://appleid.apple.com) and sign in
-2. Navigate to **Sign-In and Security** > **App-Specific Passwords**
-3. Click **Generate an app-specific password**
-4. Enter a label (e.g. "MCP Email Server") and click **Create**
-5. Copy the generated password (`xxxx-xxxx-xxxx-xxxx`) and store it securely
-
-Notes:
-- Your Apple ID must have two-factor authentication enabled
-- You can create up to 25 active app-specific passwords
-- Changing your main Apple ID password revokes all app-specific passwords
-- Never use your main iCloud password for IMAP/SMTP access
-
----
-
-## Installation
-
-### From Source
-
-```bash
-git clone https://github.com/rgabriel/mcp-icloud-email.git
-cd mcp-icloud-email
-make build
-```
-
-### Using `go install`
-
-```bash
-go install github.com/rgabriel/mcp-icloud-email@latest
-```
-
-### Docker
-
-```bash
-docker build -t mcp-icloud-email .
-
-docker run \
-  -e ICLOUD_EMAIL="you@icloud.com" \
-  -e ICLOUD_PASSWORD="xxxx-xxxx-xxxx-xxxx" \
-  mcp-icloud-email
-```
-
-The Docker image uses a multi-stage build with a [distroless](https://github.com/GoogleContainerTools/distroless) base image and runs as a non-root user.
-
-### Prebuilt Binaries
-
-Download the binary for your platform from the [Releases](https://github.com/rgabriel/mcp-icloud-email/releases) page. Binaries are available for:
-
-| Platform | Architecture | Binary |
-|----------|-------------|--------|
-| Linux | x86_64 | `mcp-icloud-email-linux-amd64` |
-| Linux | ARM64 | `mcp-icloud-email-linux-arm64` |
-| macOS | Intel | `mcp-icloud-email-macos-amd64` |
-| macOS | Apple Silicon | `mcp-icloud-email-macos-arm64` |
-| Windows | x86_64 | `mcp-icloud-email-windows-amd64.exe` |
-
-SHA256 checksums are provided alongside each binary.
-
----
-
-## Configuration
-
-The server requires two environment variables:
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ICLOUD_EMAIL` | Yes | Your iCloud email address (Apple ID) |
-| `ICLOUD_PASSWORD` | Yes | App-specific password from appleid.apple.com |
-| `LOG_LEVEL` | No | Logging verbosity: `DEBUG`, `INFO` (default), `WARN`, `ERROR` |
-
-You can set these as environment variables or place them in a `.env` file:
-
-```bash
+```sh
 cp .env.example .env
-# Edit .env with your credentials
+# Set MAIL_* values; export them into the process environment.
+make server
+./mail-server
 ```
 
----
+`cmd/mail` reads environment variables directly. The root stdio command also supports `.env` through its existing configuration loader.
 
-## Usage with Claude Desktop
+| Variable | Purpose |
+| --- | --- |
+| `MAIL_BASE_URL` | Public HTTPS origin, without trailing slash |
+| `MAIL_ADDR` | Listen address; defaults to `127.0.0.1:4290` |
+| `MAIL_MONGODB_URI` | MongoDB URI; application database is `mail` |
+| `MAIL_ENCRYPTION_KEY` | Base64 encoding of 32 random bytes; generate once with `openssl rand -base64 32` |
+| `MAIL_RESEND_API_KEY` | Resend key for email verification and password reset |
+| `MAIL_EMAIL_FROM` | Verified sending address, optionally with a display name |
 
-Add the server to your Claude Desktop configuration file.
+Keep the encryption key backed up separately with your database backup. Replacing or losing it makes stored iCloud credentials unreadable. Secrets belong in private service environment files, never in Git.
 
-**macOS** -- `~/Library/Application Support/Claude/claude_desktop_config.json`
+The production service runs on `oracle-vm` using [smdctl.yml](smdctl.yml), behind the existing HTTPS reverse proxy. Its private environment file is `~/.config/smdctl/env/mail.env` and its binary is `/home/snowbear/ci/mail/mail-server`.
 
-**Linux** -- `~/.config/claude/claude_desktop_config.json`
-
-**Windows** -- `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "icloud-email": {
-      "command": "/path/to/mcp-icloud-email",
-      "env": {
-        "ICLOUD_EMAIL": "you@icloud.com",
-        "ICLOUD_PASSWORD": "xxxx-xxxx-xxxx-xxxx"
-      }
-    }
-  }
-}
+```sh
+smdctl run -f smdctl.yml
+smdctl status mail
+curl https://mail.microapps.space/healthz
 ```
 
-Restart Claude Desktop after saving.
+Docker builds the React assets and hosted Go binary. Publish port 4290 and supply the same `MAIL_*` variables. Health is available at `/healthz`; MongoDB is checked at startup.
 
----
+## Email cache
+
+Fetched full messages are cached in MongoDB for one minute, scoped by user, iCloud account, folder, and message UID. Mailbox mutations invalidate that user/account cache; replacing or disconnecting an account clears the user cache. Cached bodies are stored in MongoDB, so database access also grants access to cached message content. The TTL index cleans expired documents asynchronously; reads enforce expiration immediately. Messages over 8 MiB are served without caching; email and attachment reads reject MIME messages over 20 MiB. External mailbox changes can remain stale for up to one minute.
+
+## Local stdio use
+
+The original single-user stdio interface remains available:
+
+```sh
+export ICLOUD_EMAIL=you@icloud.com
+export ICLOUD_PASSWORD=xxxx-xxxx-xxxx-xxxx
+go run .
+```
+
+Use an app-specific password, never your main Apple account password. IMAP uses TLS on port 993; SMTP uses STARTTLS on port 587.
+
+## Development and checks
+
+```sh
+cd web && npm ci && npm test && npm run build
+# From the repository root:
+go test ./...
+go vet ./...
+# Include Mongo integration tests against a disposable test server:
+MAIL_TEST_MONGODB_URI=mongodb://127.0.0.1:27018 go test ./...
+```
+
+The official MCP Go SDK owns protocol negotiation, Streamable HTTP and stdio framing, schema validation, and tool dispatch. Tool discovery does not connect to iCloud. Authenticated tool calls resolve the requesting user's credentials and close their connection afterward.
+
+Passwords use salted scrypt hashes. iCloud credentials use AES-256-GCM authenticated encryption bound to the user. Browser sessions and MCP tokens are opaque, stored hashed, checked for expiration, and scoped to the requesting user. Browser writes require a matching Origin. MCP requests require bearer authentication and reject foreign origins. Email links are single-use and expire. Public authentication routes have bounded rate limits.
 
 ## Available Tools
 
@@ -341,165 +231,11 @@ Download an email attachment by filename.
 | `email_id` | string | *(required)* | Email UID |
 | `filename` | string | *(required)* | Attachment filename |
 | `folder` | string | `INBOX` | Mailbox folder |
-| `save_path` | string | | File path to save to (returns base64 if omitted) |
+| `save_path` | string | | Unavailable on the hosted server; omit to receive base64 |
 
 ---
 
-## Working with Large Inboxes
-
-The server uses server-side IMAP SEARCH commands, so filtering happens on the mail server before any data is downloaded. Default settings are tuned for large mailboxes:
-
-- `search_emails` defaults to the last 30 days and a limit of 50
-- `count_emails` returns counts without fetching message content
-- `get_email` loads full body content on demand for individual messages
-
-**Recommended workflow:**
-
-1. Use `count_emails` to check how many emails match your criteria
-2. Adjust `last_days`, `since`/`before`, or `unread_only` to narrow results
-3. Use `search_emails` with `offset` and `limit` for pagination
-4. Use `get_email` only for specific messages you need to read in full
-
----
-
-## Development
-
-### Building
-
-```bash
-make build          # Build binary
-make test           # Run tests with race detector
-make lint           # Run golangci-lint
-make vet            # Run go vet
-make vuln           # Run govulncheck
-make all            # vet + lint + test + build
-make docker         # Build Docker image
-make tools          # Install dev tools (golangci-lint, govulncheck)
-```
-
-### Running Locally
-
-```bash
-export ICLOUD_EMAIL="you@icloud.com"
-export ICLOUD_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-make run
-```
-
-### Testing
-
-The project includes 78+ table-driven tests covering all tool handlers, input validation, and error paths. Tests use mock implementations of the `EmailService` and `EmailSender` interfaces -- no live IMAP/SMTP connection required.
-
-```bash
-make test
-```
-
-### Testing with MCP Inspector
-
-Use the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) to interactively test the server:
-
-```bash
-npx @modelcontextprotocol/inspector mcp-icloud-email
-```
-
-### CI Pipeline
-
-Every push to `main` or `dev` and every pull request runs:
-
-- `go vet` and `go test -race` -- correctness and data race detection
-- `golangci-lint` -- static analysis (errcheck, govet, staticcheck, gosec, gocritic, and more)
-- `govulncheck` -- known vulnerability scanning
-
-Tagged releases (`v*.*.*`) trigger automated cross-platform builds with SHA256 checksums.
-
----
-
-## Architecture
-
-```
-mcp-icloud-email/
-  main.go              Server setup, tool registration, middleware chain
-  config/config.go     Environment variable loading and validation
-  imap/client.go       IMAP client (imap.mail.me.com:993, TLS)
-  smtp/client.go       SMTP client (smtp.mail.me.com:587, STARTTLS)
-  tools/
-    interfaces.go      EmailReader, EmailWriter, EmailService, EmailSender
-    helpers.go         Address parsing, shared utilities
-    validate.go        Input validation (paths, folders, IDs, sizes)
-    handlers_test.go   78+ table-driven tests with mocks
-    <tool>.go          One file per tool handler (14 files)
-```
-
-**Middleware chain:** Each tool call passes through `logging -> timeout -> handler`. The logging middleware assigns a UUID request ID and records tool name, duration, and outcome. The timeout middleware enforces a 60-second deadline.
-
-**Thread safety:** The IMAP client uses a `sync.Mutex` to serialize access. Internal methods (lowercase) assume the caller holds the lock, preventing deadlocks from nested calls like `DeleteEmail -> moveEmail`.
-
-### Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| [mcp-go](https://github.com/mark3labs/mcp-go) | MCP SDK -- tool registration, stdio transport |
-| [go-imap/v2](https://github.com/emersion/go-imap) | IMAP protocol client |
-| [go-message](https://github.com/emersion/go-message) | MIME parsing and email formatting |
-| [godotenv](https://github.com/joho/godotenv) | `.env` file loading |
-| [uuid](https://github.com/google/uuid) | Message-ID and request ID generation |
-
----
-
-## Security
-
-- **App-specific passwords only** -- never accepts or stores your main iCloud password
-- **TLS everywhere** -- IMAP on port 993 (implicit TLS), SMTP on port 587 (STARTTLS)
-- **Input validation** -- path traversal prevention, null byte rejection, IMAP wildcard filtering, control character rejection, numeric UID validation
-- **Size limits** -- 10 MB body, 998-character subject (per RFC 2822)
-- **Distroless Docker image** -- minimal attack surface, runs as non-root
-- **No third-party data sharing** -- the server runs locally and communicates only with iCloud servers
-- **Revocable access** -- app-specific passwords can be revoked at any time from appleid.apple.com
-
-Never commit your `.env` file to version control. The `.gitignore` already excludes it.
-
----
-
-## Troubleshooting
-
-### Authentication Failed
-
-- Verify you are using an app-specific password, not your main iCloud password
-- Check that two-factor authentication is enabled on your Apple ID
-- Regenerate a new app-specific password at appleid.apple.com
-- Confirm your email address matches your Apple ID
-
-### Folder Not Found
-
-- Run `list_folders` to see the exact folder names your account has
-- iCloud uses names like "Deleted Messages" rather than "Trash"
-- Folder names are case-sensitive
-
-### Invalid Date Format
-
-- Use ISO 8601: `2024-01-15T14:30:00Z`
-- Include timezone offset if not UTC: `2024-01-15T14:30:00-05:00`
-
-### Timeouts or Slow Responses
-
-- Check your internet connection
-- Reduce the `limit` parameter for large result sets
-- Use `count_emails` first to gauge result size before searching
-- Use narrower date ranges with `since`/`before` or `last_days`
-
-### Email Not Found
-
-- Email IDs (UIDs) are unique per folder -- make sure you are looking in the correct folder
-- The email may have been moved or deleted since the ID was retrieved
-- Use `search_emails` to find the current email ID
-
----
-
-## Contributing
-
-Contributions are welcome. Please open an issue to discuss larger changes before submitting a pull request.
-
----
 
 ## License
 
-MIT License -- see [LICENSE](LICENSE) for details.
+MIT; see [LICENSE](LICENSE).

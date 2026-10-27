@@ -5,24 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // FlagEmailHandler creates a handler for flagging emails
-func FlagEmailHandler(imapClient EmailWriter) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
+func FlagEmailHandler(imapClient EmailWriter) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := arguments(req)
 
 		// Get required email_id
 		emailID, ok := args["email_id"].(string)
 		if !ok || emailID == "" {
-			return mcp.NewToolResultError("email_id is required"), nil
+			return toolError("email_id is required"), nil
 		}
 
 		// Get required flag type
 		flagType, ok := args["flag"].(string)
 		if !ok || flagType == "" {
-			return mcp.NewToolResultError("flag is required"), nil
+			return toolError("flag is required"), nil
 		}
 
 		// Validate flag type
@@ -33,7 +33,7 @@ func FlagEmailHandler(imapClient EmailWriter) func(context.Context, mcp.CallTool
 			"none":      true,
 		}
 		if !validFlags[flagType] {
-			return mcp.NewToolResultError("flag must be one of: follow-up, important, deadline, none"), nil
+			return toolError("flag must be one of: follow-up, important, deadline, none"), nil
 		}
 
 		// Get folder (default to INBOX)
@@ -55,14 +55,14 @@ func FlagEmailHandler(imapClient EmailWriter) func(context.Context, mcp.CallTool
 				"purple": true,
 			}
 			if !validColors[color] {
-				return mcp.NewToolResultError("color must be one of: red, orange, yellow, green, blue, purple"), nil
+				return toolError("color must be one of: red, orange, yellow, green, blue, purple"), nil
 			}
 		}
 
 		// Flag the email
 		err := imapClient.FlagEmail(ctx, folder, emailID, flagType, color)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to flag email: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to flag email: %v", err)), nil
 		}
 
 		// Format response
@@ -90,9 +90,9 @@ func FlagEmailHandler(imapClient EmailWriter) func(context.Context, mcp.CallTool
 
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+			return toolError(fmt.Sprintf("failed to format response: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return toolText(string(jsonData)), nil
 	}
 }
