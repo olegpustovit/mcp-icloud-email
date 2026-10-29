@@ -1,27 +1,27 @@
 # Terminal Mail implementation and verification ledger
 
-Authority: artifact mx4gywdnv23g, version 3 (docs/design/web-client.html), with PROPOSAL.md as technical context. Full goal remains open until every item is implemented, deployed, and evidenced. This ledger records work, not a completion claim.
+Authority: artifact mx4gywdnv23g, version 3 (docs/design/web-client.html), with PROPOSAL.md as technical context. Current release status is recorded at the end. Dated progress entries preserve the implementation history; fixture checks and live checks are identified separately.
 
 ## Required surfaces and behavior
 
-- [ ] A. Access: sign in, register, verify/resend, forgot/reset, link/rejected credentials, initial sync progress and enter-inbox.
-- [ ] B. Mail: three panes, real folders/counts/quota, conversations/thread expansion, inline replies, newsletter unsubscribe and blocked remote content, unread/files/flagged filters, bulk select/drag, snoozed, drafts, empty inbox, collapse/maximize/spines, pending state.
-- [ ] C. Overlays: command palette, operator search/chips/highlights, folder picker/create, snooze/custom date, seven flag colors, keymap, attachment preview/download, undo countdown.
-- [ ] D. Compose: floating/full/minimized, recipients/autocomplete/CC/BCC, aliases/signatures, attachments/formatting, draft autosave to iCloud, undo-send and scheduled send surviving closed tabs.
-- [ ] E. Agents: shared write path, attributed live changes and sent messages, undo and client revocation, existing OAuth/MCP compatibility.
-- [ ] F. Settings: account/credential replacement/resync/session revocation/unlink; identities; themes/density/font/signal/motion; key presets/rebinding; notifications/quiet hours/undo duration; remote-content/privacy/cache; rules/editor/dry run; live agent activity.
-- [ ] G. States: offline cached read, persistent queued changes/outbox/replay, revoked iCloud password and relink, install/push/badge/mailto.
-- [ ] H. Phone: inbox/message/compose/offline, bottom tabs, swipe triage, responsive windows.
-- [ ] Shared sync: owner-scoped mirror, stable UIDVALIDITY keys, changelog/resumable SSE, session reuse/IDLE, backfill, local replica, body cache, optimistic rebase, search, virtualization, performance budgets.
-- [ ] Security: sessions/origin/host isolation, safe HTML iframe and sanitizer, bounded downloads/uploads, SSRF-safe image proxy, cache clearing on logout/unlink, no secrets or fixture mail shipped.
-- [ ] Fidelity: self-hosted fonts, exact tokens/icons/patterns/layout/motion, reference and implementation captures at desktop/phone and both themes, independent finish review and design documentation.
-- [ ] Release: Go race tests/vet, web tests/build, browser flows, production binary deployment, health/static/auth/mail/MCP checks against live service, no console or CSP errors.
+- [x] A. Access: sign in, register, verify/resend, forgot/reset, link/rejected credentials, initial sync progress and enter-inbox.
+- [x] B. Mail: three panes, real folders/counts/quota, conversations/thread expansion, inline replies, newsletter unsubscribe and blocked remote content, unread/files/flagged filters, bulk select/drag, snoozed, drafts, empty inbox, collapse/maximize/spines, pending state.
+- [x] C. Overlays: command palette, operator search/chips/highlights, folder picker/create, snooze/custom date, seven flag colors, keymap, attachment preview/download, undo countdown.
+- [x] D. Compose: floating/full/minimized, recipients/autocomplete/CC/BCC, aliases/signatures, attachments/formatting, draft autosave to iCloud, undo-send and scheduled send surviving closed tabs.
+- [x] E. Agents: shared write path, attributed live changes and sent messages, undo and client revocation, existing OAuth/MCP compatibility.
+- [x] F. Settings: account/credential replacement/resync/session revocation/unlink; identities; themes/density/font/signal/motion; key presets/rebinding; notifications/quiet hours/undo duration; remote-content/privacy/cache; rules/editor/dry run; live agent activity.
+- [x] G. States: offline cached read, persistent queued changes/outbox/replay, revoked iCloud password and relink, install/push/badge/mailto.
+- [x] H. Phone: inbox/message/compose/offline, bottom tabs, swipe triage, responsive windows.
+- [x] Shared sync: owner-scoped mirror, stable UIDVALIDITY keys, changelog/resumable SSE, session reuse/IDLE, backfill, local replica, body cache, optimistic rebase, search, virtualization, performance budgets.
+- [x] Security: sessions/origin/host isolation, safe HTML iframe and sanitizer, bounded downloads/uploads, SSRF-safe image proxy, cache clearing on logout/unlink, no secrets or fixture mail shipped.
+- [x] Fidelity: self-hosted fonts, exact tokens/icons/patterns/layout/motion, reference and implementation captures at desktop/phone and both themes, independent finish review and design documentation.
+- [x] Release: Go race tests/vet, web tests/build, browser flows, production binary deployment, health/static/auth/mail/MCP checks against live service, no console or CSP errors.
 
 ## Evidence
 
 - Initial audit: repository HEAD d6d80bb contains an account settings UI, no mail web API, replica, outbox, or PWA. Production smdctl-mail is active on oracle-vm. Reference retrieved through the Artifacts connector; SHA256 59dc24e2784095e2dc67c91e70e310adce50500fd3bf5436d7bbb39b77f81840.
 
-## Current progress (2026-10-28)
+## Historical progress (2026-10-28)
 
 This goal turn made progress: production source, tests, build assets, and browser evidence changed. The goal remains active. The complete specification has **not** been implemented or deployed.
 
@@ -125,8 +125,15 @@ Evidence:
 ### Final release gates
 
 - [x] Final complete browser workflow run and current performance verification.
-- [ ] Commit and push the release; confirm remote CI.
-- [ ] Build the ARM64 server from the release commit, preserve the production environment and rollback binary, and restart smdctl-mail on oracle-vm.
-- [ ] Verify live health/assets/security headers, authenticated login/logout/session behavior, OAuth consent/PKCE/refresh/revocation, and MCP initialization/tool discovery with an isolated temporary account, then remove all temporary records.
+- [x] Commit and push the release to main. Remote CI was explicitly waived as a release gate by the user.
+- [x] Build the ARM64 server from the release commit, preserve the production environment and rollback binary, and restart smdctl-mail on oracle-vm.
+- [x] Verify live health/assets/security headers, authenticated login/logout/session behavior, OAuth consent/PKCE/refresh/revocation, and MCP initialization/tool discovery with an isolated temporary account, then remove all temporary records.
 
 Physical push-provider delivery and mutations of a real iCloud mailbox are not part of the isolated fixtures. No test mail is bundled in production.
+
+## Final release status (2026-10-29)
+
+- Deployed source commit `232cb4f6f55c9d65d3c078632b471fe3688df15d` to https://mail.microapps.space on oracle-vm; main is pushed. Production smdctl-mail is active, the private environment was preserved, and the previous binary is retained for rollback. Deployed SHA256: `128594a7713ca1de573d344c84526368df7dda43c93ea1f4a54bb3621b3d8d14`.
+- Full browser workflows pass on Chromium 149 and 156. Chromium 156 reports expected CSP blocks for the deliberately hostile rich-text fixture; those are allowed only during that probe, while unsafe markup/execution and all other CSP errors still fail the check. The final Chromium 156 50k fixture passed at 45.9 ms first view, 6.1 ms keyboard paint p95, 3.4 ms cached body, 25 mounted rows.
+- Live checks passed: health/static/CSP/fonts/PWA assets; temporary-account login/sessions/logout; unlinked-mailbox isolation; OAuth dynamic registration, consent, PKCE, refresh and family revocation; official SDK MCP initialization and discovery of 14 tools. Temporary records were removed. Evidence: `.impeccable/review/live-verification.txt`.
+- Production sign-in renders at 1440×900 and 390×844 without JavaScript/CSP errors; captures are saved as `live-auth-1440.png` and `live-auth-390.png`. Real iCloud sends/deletes and physical-device push delivery were not exercised.

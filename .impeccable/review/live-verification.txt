@@ -1,0 +1,7 @@
+PASS: live health, shell, CSP, manifest, worker, fonts, login, sessions and unlinked-mailbox isolation
+PASS: live OAuth registration, consent, PKCE, MCP initialization/14 tools, refresh and family revocation
+PASS: live logout revokes browser access
+PASS: temporary account, sessions and client grant cleaned up
+PASS: public Chromium sign-in at 1440x900 and 390x844; fonts loaded; no JavaScript/CSP errors
+Source: 232cb4f6f55c9d65d3c078632b471fe3688df15d
+Deployed binary SHA256: 128594a7713ca1de573d344c84526368df7dda43c93ea1f4a54bb3621b3d8d14
