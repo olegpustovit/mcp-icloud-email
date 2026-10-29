@@ -22,6 +22,7 @@ func TestSendEmailRejectsImpersonationAndUnsafeHeaders(t *testing.T) {
 		{name: "impersonation", from: "victim@example.com"},
 		{name: "header injection", from: "owner@icloud.com", headers: map[string]string{"References": "<a>\r\nBcc: victim@example.com"}},
 		{name: "reserved header", from: "owner@icloud.com", headers: map[string]string{"From": "victim@example.com"}},
+		{name: "invalid automated header", from: "owner@icloud.com", headers: map[string]string{"Auto-Submitted": "no"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := c.SendEmail(context.Background(), tc.from, []string{"to@example.com"}, "subject", "body", SendOptions{Headers: tc.headers})
@@ -29,6 +30,18 @@ func TestSendEmailRejectsImpersonationAndUnsafeHeaders(t *testing.T) {
 				t.Fatal("expected validation error before network send")
 			}
 		})
+	}
+}
+
+func TestAutomatedForwardHeaderReachesSMTPAndSent(t *testing.T) {
+	var sent, stored []byte
+	c := NewClient("owner@icloud.com", "secret", func(_ context.Context, raw []byte) error { stored = bytes.Clone(raw); return nil })
+	c.submit = func(_ context.Context, _ string, _ []string, raw []byte) error { sent = bytes.Clone(raw); return nil }
+	if err := c.SendEmail(context.Background(), "owner@icloud.com", []string{"to@example.com"}, "forward", "body", SendOptions{Headers: map[string]string{"Auto-Submitted": "auto-generated"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(sent, stored) || !bytes.Contains(sent, []byte("Auto-Submitted: auto-generated\r\n")) {
+		t.Fatal("automated forward lost loop prevention header")
 	}
 }
 

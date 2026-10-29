@@ -1,0 +1,1078 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terminal Mail Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Silkscreen&family=Doto:wght@700;900&display=swap" rel="stylesheet">
+<style>
+/* ================= TOKENS ================= */
+:root{
+  --paper:#E6E6E1; --paper-2:#F3F3EF; --paper-3:#FCFCFA;
+  --ink:#141413; --ink-2:#2E2E2C; --mute:#6A6A65; --mute-2:#9A9A93;
+  --line:#2E2E2C; --hair:#D0D0C9; --tint:#E1E1DA; --dot:rgba(20,20,19,.30);
+  --acc:#4A4A46; --acc-ink:#F3F3EF; --acc-mute:#B4B4AD;
+  --ramp-1:#141413; --ramp-2:#3A3A37; --ramp-3:#5E5E5A; --ramp-4:#8A8A84; --ramp-5:#B4B4AD; --ramp-6:#D6D6D0;
+  --sig-red:#E5484D; --sig-orange:#F76B15; --sig-yellow:#F5B800; --sig-green:#30A46C; --sig-blue:#0090FF; --sig-purple:#8E4EC6; --sig-gray:#8B8D98;
+  --f-display:'Silkscreen',ui-monospace,monospace;
+  --f-dot:'Doto',ui-monospace,monospace;
+  /* QuickDraw-style 8x8 fills (System 1 PAT#): gray 50 / ltGray 25 / dkGray 75 / diag / stripes */
+  --pat-gray:repeating-conic-gradient(var(--ink) 0 25%,transparent 0 50%) 0 0/2px 2px;
+  --pat-ltgray:radial-gradient(var(--ink) .7px,transparent .8px) 0 0/3px 3px;
+  --pat-dkgray:repeating-conic-gradient(var(--ink) 0 25%,var(--ink-2) 0 50%) 0 0/2px 2px;
+  --pat-diag:repeating-linear-gradient(-45deg,var(--ink) 0 1px,transparent 1px 4px);
+  --pat-stripe:repeating-linear-gradient(to bottom,currentColor 0 1px,transparent 1px 3px);
+  --f-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --f-sans:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  --frame:1.5px solid var(--line); --rule:1px solid var(--line); --hairline:1px solid var(--hair);
+  --t-snap:80ms; --t-quick:140ms; --t-base:200ms; --t-window:220ms;
+  --e-out:cubic-bezier(.2,.8,.2,1); --e-step:steps(4,end);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --paper:#0D0D0C; --paper-2:#151514; --paper-3:#1C1C1B;
+  --ink:#E6E6E0; --ink-2:#CACAC3; --mute:#8C8C85; --mute-2:#5E5E59;
+  --line:#8A8A84; --hair:#2C2C29; --tint:#22221F; --dot:rgba(230,230,224,.2);
+  --acc:#B4B4AD; --acc-ink:#151514; --acc-mute:#5C5C57; color-scheme:dark;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0D0D0C; --paper-2:#151514; --paper-3:#1C1C1B;
+  --ink:#E6E6E0; --ink-2:#CACAC3; --mute:#8C8C85; --mute-2:#5E5E59;
+  --line:#8A8A84; --hair:#2C2C29; --tint:#22221F; --dot:rgba(230,230,224,.2);
+  --acc:#B4B4AD; --acc-ink:#151514; --acc-mute:#5C5C57; color-scheme:dark;}}
+*{box-sizing:border-box}
+html,body{background:var(--paper)}
+body{margin:0;color:var(--ink);font:400 14px/1.5 var(--f-sans);-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit;background:none;border:0;padding:0}
+button{cursor:pointer}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+::selection{background:var(--acc);color:var(--acc-ink)}
+
+/* ================= SIGNATURE PRIMITIVES ================= */
+.ico{width:1em;height:1em;display:inline-block;vertical-align:-.12em;shape-rendering:crispEdges;fill:currentColor;flex:none}
+.mono{font-family:var(--f-mono)}
+.cap{font:500 11px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em}
+.disp{font-family:var(--f-display);text-transform:uppercase;font-weight:400;line-height:1.02}
+.mute{color:var(--mute)}
+.dm{font-family:var(--f-dot);font-weight:900;letter-spacing:.02em}
+.sp{flex:1}
+.dots{background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:8px 8px}
+.crop{--c:var(--line);--l:18px;--w:1.5px;background:
+  linear-gradient(var(--c),var(--c)) top left/var(--l) var(--w) no-repeat,linear-gradient(var(--c),var(--c)) top left/var(--w) var(--l) no-repeat,
+  linear-gradient(var(--c),var(--c)) top right/var(--l) var(--w) no-repeat,linear-gradient(var(--c),var(--c)) top right/var(--w) var(--l) no-repeat,
+  linear-gradient(var(--c),var(--c)) bottom left/var(--l) var(--w) no-repeat,linear-gradient(var(--c),var(--c)) bottom left/var(--w) var(--l) no-repeat,
+  linear-gradient(var(--c),var(--c)) bottom right/var(--l) var(--w) no-repeat,linear-gradient(var(--c),var(--c)) bottom right/var(--w) var(--l) no-repeat}
+.prm{font:500 12px/1.75 var(--f-mono);text-transform:uppercase;letter-spacing:.03em}
+.prm>div::before{content:'>> '}
+.prm.big{font-size:17px;line-height:1.6}
+.reg{position:absolute;background:var(--hair);pointer-events:none}
+.reg.h{height:1px;left:0;right:0}.reg.v{width:1px;top:0;bottom:0}
+.vtxt{writing-mode:vertical-rl;font:500 10px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.12em}
+.bin{font:400 9.5px/1.25 var(--f-mono);color:var(--mute);letter-spacing:.04em;word-break:break-all}
+.ramp{display:flex}.ramp i{flex:1;height:100%}
+
+/* windows */
+.win{background:var(--paper-2);border:var(--frame);display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.wt{height:26px;flex:none;display:flex;align-items:center;gap:8px;padding:0 4px 0 9px;border-bottom:var(--frame);font:500 11.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;overflow:hidden;min-width:0}
+.wt .t{flex:none;max-width:72%;overflow:hidden;text-overflow:ellipsis}
+.wt .stripes{flex:1;align-self:center;height:11px;min-width:12px}
+.win.on>.wt .stripes{background:var(--pat-stripe)}
+.wt .h{opacity:.6;font-size:10.5px}
+.win.on>.wt{background:var(--acc);color:var(--acc-ink)}
+.win.pop{box-shadow:5px 5px 0 var(--line)}
+.ctl{display:flex;gap:3px}.ctl i{width:15px;height:15px;border:1.5px solid currentColor;display:grid;place-items:center;cursor:pointer}
+.ctl svg{width:9px;height:9px;shape-rendering:crispEdges;fill:currentColor}
+.wb{flex:1;min-height:0;overflow:auto;position:relative}
+
+.btn{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:var(--frame);background:var(--paper-3);font:500 11.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;transition:transform var(--t-snap) var(--e-out),box-shadow var(--t-snap) var(--e-out)}
+.btn:hover{box-shadow:2px 2px 0 var(--line);transform:translate(-1px,-1px)}
+.btn:active{box-shadow:none;transform:translate(1px,1px)}
+.btn.pri{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.btn.sm{height:24px;padding:0 9px;font-size:10.5px}
+.btn.lg{height:40px;padding:0 18px;font-size:12.5px}
+.btn.wide{width:100%}
+.btn.quiet{border-color:transparent;background:transparent}
+.btn.quiet:hover{background:var(--tint);box-shadow:none;transform:none}
+.btn.danger{border-style:dashed}
+.tk{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 8px;font:500 11px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.tk:hover{background:var(--tint)}
+.tk kbd{opacity:1}
+.ib{width:28px;height:28px;display:grid;place-items:center;font-size:14px;color:var(--ink-2)}
+.ib:hover{background:var(--tint);color:var(--ink)}
+.link{font:500 11.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;cursor:pointer;text-decoration:none}
+.link::before{content:'['}.link::after{content:']'}
+.link:hover{background:var(--acc);color:var(--acc-ink)}
+kbd{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border:1px solid currentColor;font:500 10px/1 var(--f-mono);text-transform:uppercase;opacity:.75}
+.inp{height:36px;border:var(--frame);background:var(--paper-3);padding:0 10px;font:400 14px var(--f-mono);display:flex;align-items:center;gap:6px}
+.inp.on{box-shadow:3px 3px 0 var(--acc)}
+.inp.err{border-style:dashed}
+.lbl{font:500 10.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin-bottom:6px;display:block}
+.caret{display:inline-block;width:7px;height:15px;background:var(--ink);animation:blink 1s steps(1) infinite;vertical-align:-2px}
+.chk{width:14px;height:14px;border:1.5px solid currentColor;display:inline-grid;place-items:center;flex:none}
+.chk.on::after{content:'';width:8px;height:8px;background:currentColor}
+.tgl{width:32px;height:18px;border:var(--frame);display:inline-flex;padding:2px;flex:none}
+.tgl::after{content:'';width:12px;height:12px;background:var(--line);transition:transform var(--t-quick) var(--e-step)}
+.tgl.on{background:var(--acc);border-color:var(--acc)}.tgl.on::after{background:var(--acc-ink);transform:translateX(12px)}
+.seg{display:inline-flex;border:var(--frame)}
+.seg span{padding:5px 8px;font:500 10.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;border-right:var(--frame);cursor:pointer}
+.seg span:last-child{border-right:0}
+.seg span.on{background:var(--acc);color:var(--acc-ink)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 7px;border:1px solid var(--line);font:400 12px/1 var(--f-mono);background:var(--paper-3);white-space:nowrap}
+.chip.inv{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.chip.dash{border-style:dashed;color:var(--mute)}
+.av{width:26px;height:26px;display:grid;place-items:center;font:600 10.5px/1 var(--f-mono);flex:none;border:1.5px solid var(--line);background:var(--paper-3)}
+.av.lg{width:36px;height:36px;font-size:13px}
+.av.me{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.flag{width:10px;height:10px;border:1.5px solid var(--ink);flex:none;display:inline-block}
+.flag.red{background:var(--ink)}
+.flag.orange{background:repeating-linear-gradient(-45deg,var(--ink) 0 1.5px,transparent 1.5px 3.5px)}
+.flag.yellow{background:radial-gradient(var(--ink) .9px,transparent 1px) 0 0/3px 3px}
+.flag.green{background:repeating-conic-gradient(var(--ink) 0 25%,transparent 0 50%) 0 0/3px 3px}
+.flag.blue{background:repeating-linear-gradient(0deg,var(--ink) 0 1.5px,transparent 1.5px 3px)}
+.flag.purple{background:repeating-linear-gradient(90deg,var(--ink) 0 1.5px,transparent 1.5px 3px)}
+.flag.gray{background:transparent}
+.signal .flag.red{background:var(--sig-red)}.signal .flag.orange{background:var(--sig-orange)}.signal .flag.yellow{background:var(--sig-yellow)}.signal .flag.green{background:var(--sig-green)}.signal .flag.blue{background:var(--sig-blue)}.signal .flag.purple{background:var(--sig-purple)}.signal .flag.gray{background:var(--sig-gray)}
+/* barcode progress, as in the reference */
+.prog{height:22px;border:var(--frame);display:flex;padding:2px;background:var(--paper-3);position:relative}
+.prog .f{background:repeating-linear-gradient(90deg,var(--ink) 0 6px,transparent 6px 7px,var(--ink) 7px 10px,transparent 10px 12px,var(--ink) 12px 17px,transparent 17px 18px);transition:width .4s var(--e-step)}
+.prog .d{width:22px;background:repeating-conic-gradient(var(--ink) 0 25%,transparent 0 50%) 0 0/2px 2px;animation:dith .5s steps(2) infinite}
+.prog .d2{width:16px;background:radial-gradient(var(--ink) .7px,transparent .8px) 0 0/3px 3px}
+.prog .d3{width:60px;background:var(--tint)}
+.prog .pc{position:absolute;right:8px;top:50%;transform:translateY(-50%);font:900 16px/1 var(--f-dot)}
+.prog.thin{height:10px;padding:1px;border-width:1px}.prog.thin .d{width:10px}.prog.thin .d2{width:8px}.prog.thin .d3{width:20px}
+.warnwin .wb{display:grid;justify-items:center;gap:12px;padding:18px}
+.warnlbl{background:var(--acc);color:var(--acc-ink);padding:7px 12px;font:600 12.5px/1.35 var(--f-mono);text-transform:uppercase;text-align:center}
+.tri{width:96px;height:84px;display:block}
+
+@keyframes ants{to{background-position:8px 0,-8px 100%,0 -8px,100% 8px}}
+.ants{background:linear-gradient(90deg,var(--ink) 50%,transparent 0) 0 0/8px 1.5px repeat-x,linear-gradient(90deg,var(--ink) 50%,transparent 0) 0 100%/8px 1.5px repeat-x,linear-gradient(0deg,var(--ink) 50%,transparent 0) 0 0/1.5px 8px repeat-y,linear-gradient(0deg,var(--ink) 50%,transparent 0) 100% 0/1.5px 8px repeat-y;animation:ants .6s steps(4) infinite}
+.spine{background:var(--acc);color:var(--acc-ink);border:var(--frame);border-color:var(--acc);display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px 0;cursor:pointer;min-height:0;overflow:hidden}
+.spine .vtxt{font-size:11px;letter-spacing:.1em}
+.spine .stripes{flex:1;width:11px;background:repeating-linear-gradient(90deg,currentColor 0 1px,transparent 1px 3px)}
+.dragghost{position:absolute;z-index:40;background:var(--paper-2);border:var(--frame);box-shadow:4px 4px 0 var(--line);padding:6px 10px;font:600 11px var(--f-mono);text-transform:uppercase;display:flex;gap:8px;align-items:center}
+/* scrollbars: dithered thumb in a framed track */
+.app ::-webkit-scrollbar,.doc ::-webkit-scrollbar{width:12px;height:12px}
+.app ::-webkit-scrollbar-track{border-left:var(--frame);background:var(--paper-2)}
+.app ::-webkit-scrollbar-thumb{background:repeating-conic-gradient(var(--line) 0 25%,transparent 0 50%) 0 0/2px 2px;border:1.5px solid var(--line);border-right:0}
+
+/* ================= MOTION ================= */
+@keyframes blink{50%{opacity:0}}
+@keyframes dith{to{background-position:1px 0}}
+@keyframes winOpen{0%{clip-path:inset(0 0 100% 0)}100%{clip-path:inset(0 0 0 0)}}
+@keyframes rowOut{0%{transform:none;opacity:1}55%{transform:translateX(-20px);opacity:0}100%{transform:translateX(-20px);opacity:0;height:0;padding-top:0;padding-bottom:0;border-width:0}}
+@keyframes toastIn{0%{transform:translateY(10px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes drain{from{width:100%}to{width:0}}
+@keyframes palIn{0%{transform:translateY(-6px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes scrim{from{opacity:0}}
+@keyframes newMail{0%{background:var(--acc);color:var(--acc-ink)}100%{}}
+@keyframes flick{0%,100%{opacity:1}40%{opacity:.3}50%{opacity:1}70%{opacity:.6}}
+@keyframes chordIn{from{transform:translateY(100%)}}
+@keyframes typeIn{from{width:0}}
+.m-open{animation:winOpen var(--t-window) var(--e-step) both}
+.m-toast{animation:toastIn var(--t-base) steps(4,end) both}
+.m-pal{animation:palIn var(--t-quick) var(--e-out) both}
+.m-flick{animation:flick .42s steps(1) 1}
+.m-type{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;animation:typeIn .5s steps(24,end) both}
+.leaving{animation:rowOut 220ms var(--e-out) forwards;overflow:hidden}
+.arrive{animation:newMail 900ms steps(6,end)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}}
+
+/* ================= APP (1440×900) ================= */
+.app{width:1440px;height:900px;display:grid;grid-template-rows:1fr 26px;background:var(--paper);color:var(--ink);position:relative;overflow:hidden;font:400 14px/1.45 var(--f-sans)}
+.panes{display:grid;grid-template-columns:232px 444px 1fr;gap:6px;padding:6px;min-height:0}
+.panes.set{grid-template-columns:232px 1fr}
+.side .wb{display:flex;flex-direction:column;overflow:hidden}
+.sbtop{padding:10px;display:grid;gap:8px;border-bottom:var(--hairline)}
+.sbs{display:flex;align-items:center;gap:8px;height:28px;padding:0 9px;border:1px solid var(--hair);background:var(--paper-3);font:400 12px var(--f-mono);color:var(--mute)}
+.sbs:hover{border-color:var(--line);color:var(--ink)}
+.tree{padding:8px 0;overflow:auto;font:400 12.5px/1 var(--f-mono)}
+.ng{padding:14px 10px 6px;font:500 10.5px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mute);display:flex}
+.ni{height:26px;padding:0 10px;display:flex;gap:7px;align-items:center;cursor:pointer;white-space:nowrap}
+.ni:hover{background:var(--tint)}
+.ni.on{background:var(--acc);color:var(--acc-ink)}
+.ni .n{margin-left:auto;font:900 14px/1 var(--f-dot)}
+.ni .br{color:var(--mute-2);width:12px;flex:none}.ni.on .br{color:var(--acc-mute)}
+.sfill{flex:1;min-height:30px;margin:0 10px;background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:8px 8px;opacity:.7}
+.quota{padding:10px;display:grid;gap:6px;border-top:var(--hairline)}
+.quota .l{display:flex;justify-content:space-between;font:500 10.5px/1 var(--f-mono);text-transform:uppercase}
+
+.list .wb,.reader .wb{display:flex;flex-direction:column;overflow:hidden}
+.ph{height:38px;flex:none;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:var(--hairline)}
+.ph input{flex:1;font:400 13.5px var(--f-mono);outline:0;min-width:0}
+.lnote{display:flex;gap:8px;align-items:center;padding:7px 12px;border-bottom:var(--hairline);font:500 11px var(--f-mono);text-transform:uppercase;background:var(--paper)}
+.rows{overflow-y:auto;flex:1;min-height:0}
+.day{padding:12px 12px 5px 30px;font:500 10.5px/1 var(--f-mono);letter-spacing:.06em;color:var(--mute);text-transform:uppercase;display:flex;gap:8px;align-items:center}
+.day::after{content:'';flex:1;height:1px;background:repeating-linear-gradient(90deg,var(--hair) 0 2px,transparent 2px 4px)}
+.row{display:grid;grid-template-columns:22px 1fr;gap:3px 0;padding:9px 12px 9px 8px;border-bottom:var(--hairline);position:relative;cursor:default}
+.row .mk{grid-row:1/3;display:grid;place-items:start center;padding-top:4px}
+.row .l1{display:flex;align-items:center;gap:7px;min-width:0;height:18px}
+.row .who{font:500 13px/1.2 var(--f-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .cnt{font:400 11.5px/1 var(--f-mono);color:var(--mute)}
+.row .meta{margin-left:auto;display:flex;gap:7px;align-items:center;font:400 11.5px/1 var(--f-mono);color:var(--mute);white-space:nowrap}
+.row .tag{font:500 10px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.04em;color:var(--mute);white-space:nowrap}
+.row .l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px;color:var(--mute)}
+.row .l2 b{font-weight:500;color:var(--ink-2)}
+.row.un .who{font-weight:700}.row.un .l2 b{font-weight:600;color:var(--ink)}
+.row.un .mk::before{content:'';width:7px;height:7px;background:var(--ink)}
+.row.sel .mk::before{display:none}
+.row .qa{display:none;position:absolute;right:8px;top:5px;background:inherit;gap:1px}
+.row:hover,.row.hov{background:var(--tint)}
+.row:hover .qa,.row.hov .qa{display:flex}
+.row.cur{background:var(--acc);color:var(--acc-ink)}
+.row.cur .l2,.row.cur .meta,.row.cur .cnt,.row.cur .tag{color:var(--acc-mute)}.row.cur .l2 b{color:var(--acc-ink)}
+.row.cur .flag{--ink:var(--acc-ink)}
+.row.cur.un .mk::before{background:var(--acc-ink)}
+.row.cur .mk::after{content:'>>';position:absolute;left:3px;top:50%;transform:translateY(-50%);font:700 9px/1 var(--f-mono);display:none}
+.row.cur .ib{color:var(--acc-ink)}.row.cur .ib:hover{background:rgba(255,255,255,.12)}
+.row.picked{background:var(--tint)}
+.row.picked .mk{background:var(--pat-ltgray);margin:-9px 0 -9px -8px;padding-left:8px}.row.picked.cur{background:var(--acc)}
+.row mark{background:var(--acc);color:var(--acc-ink);padding:0 2px}
+.row.cur mark{background:var(--acc-ink);color:var(--acc)}
+
+.rc{flex:1;overflow-y:auto;min-height:0}
+.rin{max-width:800px;padding:22px 30px 130px}
+.rhead{padding:18px 20px 16px;margin-bottom:18px}
+.subj{font:600 23px/1.25 var(--f-mono);letter-spacing:-.01em;margin:0 0 10px}
+.notice{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:var(--hairline);font:500 11.5px var(--f-mono);text-transform:uppercase;letter-spacing:.03em}
+.notice:last-of-type{border-bottom:var(--hairline);margin-bottom:16px}
+.tm{border-top:var(--hairline)}
+.tm.c{display:grid;grid-template-columns:26px 150px 1fr auto;gap:12px;align-items:center;padding:10px 0;cursor:pointer}
+.tm.c:hover{background:var(--paper)}
+.tm.c .w{font:500 13px var(--f-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm.c .s{color:var(--mute);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm .d{font:400 11.5px var(--f-mono);color:var(--mute);white-space:nowrap}
+.tm.e{padding:16px 0 8px}
+.tm.e .h{display:grid;grid-template-columns:26px 1fr auto;gap:12px;align-items:start;margin-bottom:12px}
+.tm.e .w{font:600 13px/1.3 var(--f-mono)}.tm.e .a{font:400 12px/1.3 var(--f-mono);color:var(--mute)}
+.body{font:400 15px/1.65 var(--f-sans);padding-left:38px;max-width:68ch}
+.body p{margin:0 0 12px}
+.more{display:flex;align-items:center;gap:10px;padding:8px 0 8px 38px;border-top:1.5px dashed var(--hair);border-bottom:1.5px dashed var(--hair);font:500 11px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--mute);cursor:pointer;margin-bottom:-1px}
+.files{display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 12px 38px}
+.file{display:grid;grid-template-rows:44px auto;width:170px;border:var(--frame);background:var(--paper-3)}
+.file .pv{border-bottom:var(--frame)}
+.file .nm{padding:5px 8px;font:500 11px/1.3 var(--f-mono);display:flex;justify-content:space-between;gap:6px}
+.file .z{color:var(--mute)}
+.qr{position:absolute;left:30px;right:30px;bottom:14px;max-width:740px;border:var(--frame);background:var(--paper-3);display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;font:500 12px var(--f-mono);text-transform:uppercase;color:var(--mute);cursor:text}
+.qr.open{height:auto;display:block;color:var(--ink);text-transform:none;font-weight:400;box-shadow:5px 5px 0 var(--line);cursor:default;padding:0}
+.qr.open .wt{background:var(--acc);color:var(--acc-ink)}
+.empty{display:grid;place-items:center;align-content:center;gap:12px;text-align:center;padding:24px;flex:1}
+
+.stat{display:flex;align-items:center;gap:14px;padding:0 12px;border-top:var(--frame);background:var(--paper-2);font:500 10.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden}
+.led{width:7px;height:7px;background:var(--ink);display:inline-block;margin-right:6px}
+.led.off{background:transparent;border:1px solid var(--line)}
+.blocks{display:inline-flex;gap:2px;margin-right:6px}.blocks i{width:5px;height:9px;border:1px solid currentColor}
+.blocks.live i{animation:blk 1.2s steps(1) infinite}.blocks.live i:nth-child(2){animation-delay:.3s}.blocks.live i:nth-child(3){animation-delay:.6s}.blocks.live i:nth-child(4){animation-delay:.9s}
+@keyframes blk{0%,100%{background:transparent}25%,75%{background:currentColor}}
+.chord{background:var(--acc);color:var(--acc-ink);padding:4px 8px;animation:chordIn var(--t-quick) steps(3) both}
+
+/* overlays */
+.scrim{position:absolute;inset:0;background:color-mix(in srgb,var(--paper) 55%,transparent);animation:scrim var(--t-quick) both;z-index:20}
+.ov{position:absolute;z-index:21}
+.pal{left:50%;top:110px;width:620px;margin-left:-310px}
+.pq{display:flex;align-items:center;gap:10px;padding:0 14px;height:46px;border-bottom:var(--frame);font:500 15px var(--f-mono)}
+.pq input{flex:1;outline:0;font:500 15px var(--f-mono);min-width:0}
+.pi{display:flex;align-items:center;gap:12px;height:32px;padding:0 14px;font:400 13px var(--f-mono)}
+.pi .k{margin-left:auto;display:flex;gap:3px;align-items:center}
+.pi.on{background:var(--acc);color:var(--acc-ink)}
+.ps{padding:12px 14px 4px;font:500 10px/1 var(--f-mono);letter-spacing:.08em;color:var(--mute);text-transform:uppercase}
+.pft{border-top:var(--hairline);padding:7px 14px;display:flex;gap:14px;font:500 10px/1 var(--f-mono);text-transform:uppercase;color:var(--mute)}
+.picker{width:360px}
+.compose{width:580px;height:540px;right:22px;bottom:40px}
+.compose.full{left:140px;right:140px;top:44px;bottom:56px;width:auto;height:auto}
+.cf{display:flex;align-items:center;gap:8px;min-height:38px;padding:4px 14px;border-bottom:var(--hairline);font:400 13px var(--f-mono)}
+.cf .l{width:58px;color:var(--mute);font:500 10.5px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.06em}
+.cbody{flex:1;padding:14px 16px;font:400 15px/1.65 var(--f-sans);overflow:auto}
+.cbody p{margin:0 0 10px}
+.sig{color:var(--mute);font:400 13px/1.5 var(--f-mono);margin-top:14px}
+.cft{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:var(--frame)}
+.minis{position:absolute;right:22px;bottom:40px;display:flex;gap:8px;z-index:19}
+.toast{position:absolute;left:250px;bottom:40px;z-index:30;width:400px}
+.toast .tb{display:flex;align-items:center;gap:12px;padding:9px 10px 9px 12px;font:500 12px var(--f-mono);text-transform:uppercase}
+.toast .cdw{height:6px;margin:0 10px 10px;border:1px solid var(--line);padding:1px}
+.toast .cd{height:100%;background:repeating-conic-gradient(var(--ink) 0 25%,transparent 0 50%) 0 0/2px 2px;animation:drain 5s linear both}
+.help{left:120px;right:120px;top:64px;bottom:56px}
+.help .wb{padding:20px 24px;columns:3;column-gap:34px}
+.hg{break-inside:avoid;margin-bottom:20px}
+.hg h4{margin:0 0 8px;font:500 10.5px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.kr{display:flex;align-items:center;height:26px;font:400 13px var(--f-mono);border-bottom:1px dashed var(--hair)}
+.kr span:first-child{flex:1}.kr .ks{display:flex;gap:3px}
+
+/* settings */
+.sc .wb{overflow:auto}
+.sin{max-width:860px;padding:30px 40px 80px;display:grid;gap:30px}
+.sin h2{margin:0;font:400 30px/1 var(--f-display);text-transform:uppercase}
+.ss h3{margin:0 0 8px;font:500 10.5px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);display:flex;align-items:center;gap:10px}
+.ss h3::before{content:'//'}
+.kvs{border-top:var(--frame)}
+.kv{display:grid;grid-template-columns:210px 1fr auto;gap:16px;align-items:center;min-height:46px;padding:8px 0;border-bottom:var(--hairline);font:400 13px var(--f-mono)}
+.kv .k{font:500 11px var(--f-mono);text-transform:uppercase;letter-spacing:.05em}
+.kv .v{color:var(--ink-2)}
+.kv .v small{display:block;color:var(--mute);font-size:11.5px;margin-top:2px}
+
+/* full-page screens */
+.scr{width:1440px;height:900px;background:var(--paper);position:relative;overflow:hidden;color:var(--ink);font:400 14px/1.5 var(--f-sans)}
+.brand{display:flex;align-items:center;gap:8px;font:400 13px/1 var(--f-display);text-transform:uppercase}
+.brand .sq{width:12px;height:12px;background:var(--acc)}
+.scr>.brand{position:absolute;left:40px;top:30px}
+.scr .foot{position:absolute;left:40px;right:40px;bottom:26px;display:flex;justify-content:space-between;font:500 10.5px var(--f-mono);text-transform:uppercase;color:var(--mute)}
+.scr .hl{font:400 52px/1.04 var(--f-display);text-transform:uppercase;margin:0 0 22px}
+
+/* mobile */
+.mob{width:390px;height:844px;display:flex;flex-direction:column;background:var(--paper);color:var(--ink);position:relative;overflow:hidden;font:400 14px/1.45 var(--f-sans);padding:50px 6px 0}
+.mob>.win{flex:1}
+.mob .rows .row{padding:11px 12px 11px 6px}
+.tabbar{display:grid;grid-template-columns:repeat(4,1fr);height:76px;padding:6px 0 22px;flex:none}
+.tabbar span{display:grid;place-items:center;align-content:center;gap:5px;font:500 9.5px/1 var(--f-mono);text-transform:uppercase;color:var(--mute)}
+.tabbar span.on{color:var(--ink)}
+.tabbar span.on .ico{background:var(--acc);color:var(--acc-ink);outline:4px solid var(--acc)}
+.fab{position:absolute;right:20px;bottom:96px;width:52px;height:52px;background:var(--acc);color:var(--acc-ink);display:grid;place-items:center;font-size:20px;box-shadow:4px 4px 0 var(--line)}
+.swipe{position:relative;overflow:hidden}
+.swipe .under{position:absolute;inset:0;background:var(--acc);color:var(--acc-ink);display:flex;align-items:center;justify-content:flex-end;padding-right:16px;gap:8px;font:500 11px/1 var(--f-mono);text-transform:uppercase}
+.swipe .row{transform:translateX(-104px);background:var(--paper-2)}
+
+/* ================= DOC ================= */
+.doc{display:grid;grid-template-columns:210px minmax(0,1fr);gap:40px;max-width:1520px;margin:0 auto;padding:24px 28px 120px}
+.toc{position:sticky;top:24px;align-self:start;max-height:calc(100vh - 48px)}
+.toc .wb{padding:8px 0}
+.toc a{display:flex;gap:6px;align-items:center;padding:3px 10px;font:400 12px/1.4 var(--f-mono);text-decoration:none;white-space:nowrap}
+.toc a .br{color:var(--mute-2)}
+.toc a:hover,.toc a.on{background:var(--acc);color:var(--acc-ink)}
+.toc a.on .br,.toc a:hover .br{color:var(--acc-mute)}
+.toc a.sub{padding-left:22px;color:var(--mute)}
+main{min-width:0;display:grid;gap:88px}
+.hero{position:relative;height:640px;overflow:hidden}
+section.s{display:grid;gap:26px;scroll-margin-top:20px}
+.sh{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;align-items:end;padding-bottom:12px;border-bottom:var(--frame)}
+.sh .no{font:400 15px/1 var(--f-display)}
+.sh h2{margin:0;font:400 clamp(24px,3.2vw,38px)/1 var(--f-display);text-transform:uppercase}
+.sh p{grid-column:1/-1;margin:6px 0 0;font:500 12.5px/1.7 var(--f-mono);color:var(--mute);max-width:90ch}
+.sh p::before{content:'>> '}
+.sub-h{font:500 11px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;display:flex;gap:10px;align-items:center;margin:10px 0 -10px;scroll-margin-top:20px}
+.sub-h::after{content:'';flex:1;height:1px;background:repeating-linear-gradient(90deg,var(--line) 0 2px,transparent 2px 5px)}
+.cols{display:grid;gap:18px}
+.c3{grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr))}
+.c4{grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr))}
+.spec{padding:16px;display:grid;gap:12px;align-content:start}
+.tbl{width:100%;border-collapse:collapse;font:400 12.5px/1.5 var(--f-mono)}
+.tbl th{text-align:left;font-weight:500;text-transform:uppercase;font-size:10.5px;letter-spacing:.06em;background:var(--acc);color:var(--acc-ink);padding:7px 10px}
+.tbl td{padding:8px 10px;border-bottom:var(--hairline);vertical-align:top}
+.tbl td:first-child{font-weight:600}
+.win:has(>.tbl),.win:has(>.wb>.tbl){overflow-x:auto}
+.tbl{min-width:0;word-break:break-word}
+.typ{display:grid;grid-template-columns:170px minmax(0,1fr);gap:18px;align-items:baseline;padding:12px 0;border-bottom:var(--hairline);overflow-wrap:anywhere}
+.typ .m{font:400 11px/1.5 var(--f-mono);color:var(--mute)}
+.princ{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:18px}
+.princ .wb{padding:16px 18px;display:grid;gap:8px}
+.princ .n{font:400 26px/1 var(--f-display)}
+.princ b{font:600 12.5px/1.3 var(--f-mono);text-transform:uppercase}
+.princ p{margin:0;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.frame{position:relative;width:100%;aspect-ratio:1440/900;overflow:hidden;background:var(--paper);cursor:zoom-in}
+.frame.ph{aspect-ratio:390/844}
+.frame>.st{position:absolute;left:0;top:0;transform-origin:0 0}
+.fig .wb{overflow:hidden}
+.fig .cap2{padding:9px 11px;border-top:var(--frame);font:400 12.5px/1.5 var(--f-sans);color:var(--ink-2)}
+.screens{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(560px,100%),1fr));gap:26px}
+.phones{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px}
+.live-ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#liveframe{cursor:default}
+.armed{box-shadow:5px 5px 0 var(--acc)}
+.capture{position:absolute;inset:0;display:grid;place-items:center;z-index:50;background:color-mix(in srgb,var(--paper) 25%,transparent);cursor:pointer}
+.capture span{background:var(--acc);color:var(--acc-ink);padding:12px 18px;font:600 13px/1.4 var(--f-mono);text-transform:uppercase;text-align:center}
+.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(250px,1fr);gap:30px;overflow-x:auto;padding:2px 2px 10px}
+.steps .fig{position:relative}
+.steps .fig:not(:last-child)::after{content:'>>';position:absolute;right:-24px;top:40%;font:700 12px var(--f-mono)}
+.kbmap{display:grid;gap:6px;overflow-x:auto;padding:14px}
+.kbrow{display:flex;gap:6px}
+.kk{width:58px;height:58px;border:var(--frame);border-bottom-width:4px;display:grid;grid-template-rows:auto 1fr;padding:5px 6px;flex:none;background:var(--paper-3)}
+.kk .c{font:600 13px/1 var(--f-mono);text-transform:uppercase}
+.kk .a{font:500 8.5px/1.15 var(--f-mono);text-transform:uppercase;align-self:end;color:var(--mute)}
+.kk.on{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}.kk.on .a{color:var(--acc-mute)}
+.kk.w2{width:96px}.kk.spc{width:330px}
+.lightbox{position:fixed;inset:0;z-index:200;background:color-mix(in srgb,var(--paper) 92%,transparent);display:grid;place-items:center;padding:24px;cursor:zoom-out}
+.lightbox .win{width:min(100%,calc((100vh - 100px)*1.6))}
+.lightbox .win.phw{width:min(100%,calc((100vh - 100px)*.462))}
+@media (max-width:980px){
+  .doc{grid-template-columns:1fr;padding:14px 12px 80px;gap:0}
+  .toc{display:none}
+  .hero{height:auto}
+  .hero .crop{position:relative!important;left:auto!important;right:auto!important;top:auto!important;padding:24px 16px!important}
+  .hero .reg,.hero .vtxt,.hero .bin,.hero>.dots{display:none}
+  .hero .side{display:none}
+  .typ{grid-template-columns:1fr;gap:4px}
+  .wt .h{display:none}
+  .tbl th,.tbl td{display:block;width:auto}
+  .tbl tr{display:block;border-bottom:var(--frame)}
+}
+</style>
+</head>
+<body>
+<div class="doc">
+  <nav class="toc win on" aria-label="Contents"><div class="wt"><span class="t">LOG_VIEWER</span><span class="stripes"></span><span data-ctl></span></div><div class="wb" id="toc"></div></nav>
+  <main>
+    <header class="hero" id="top"></header>
+
+    <section class="s" id="rev">
+      <div class="sh"><span class="no">R3</span><h2>Signature, with discipline</h2><p>R1 used every reference element everywhere, so the screen was uniformly loud. R2 cut the noise but also cut the identity. R3 brings every signature back and gives each one a fixed job and place //</p></div>
+      <div class="win"><div class="wt"><span class="t">SIGNATURE_MAP.SYS</span><span class="stripes"></span><span data-ctl></span></div><table class="tbl" id="sigmap"></table></div>
+    </section>
+
+    <section class="s" id="refs">
+      <div class="sh"><span class="no">REF</span><h2>Reference board</h2><p>Each token and component traces back to a source. The board records what we took and what we deliberately left out //</p></div>
+      <div class="cols c3" id="refboard"></div>
+    </section>
+
+    <section class="s" id="principles">
+      <div class="sh"><span class="no">00</span><h2>Principles</h2></div>
+      <div class="princ" id="princ"></div>
+    </section>
+
+    <section class="s" id="tokens">
+      <div class="sh"><span class="no">01</span><h2>Tokens</h2><p>Near-black ink on xerox paper. Graphite is the single accent. Grayscale ramp for data, patterns for flags, signal color is opt-in //</p></div>
+      <div class="sub-h">Color</div>
+      <div class="cols c4" id="swatches"></div>
+      <div class="win"><div class="wt"><span class="t">CONTROL_PANEL // GRAY_RAMP</span><span class="stripes"></span><span data-ctl></span></div><div class="spec"><div class="ramp" style="height:56px;border:var(--frame)"><i style="background:var(--ramp-1)"></i><i style="background:var(--ramp-2)"></i><i style="background:var(--ramp-3)"></i><i style="background:var(--ramp-4)"></i><i style="background:var(--ramp-5)"></i><i style="background:var(--ramp-6)"></i></div><div class="prm"><div>RAMP_USE: DENSITY, QUOTA, THEME PREVIEW //</div></div></div></div>
+      <div class="sub-h">Type</div>
+      <div class="win"><div class="wt"><span class="t">TYPE_SPECIMEN</span><span class="stripes"></span><span data-ctl></span></div><div class="spec" style="padding:4px 16px" id="type"></div></div>
+      <div class="sub-h">Flags · pattern-coded · $MailFlagBit0..2</div>
+      <div class="win"><div class="wt"><span class="t">FLAG_PATTERNS</span><span class="stripes"></span><span data-ctl></span></div><div class="spec"><div style="display:flex;gap:22px;flex-wrap:wrap" id="flags"></div><div style="display:flex;gap:22px;flex-wrap:wrap" class="signal" id="flags2"></div></div></div>
+      <div class="sub-h">Icons · 9×9 bitmap</div>
+      <div class="win"><div class="wt"><span class="t">ICON_SET.BMP</span><span class="stripes"></span><span data-ctl></span></div><div class="spec" style="display:flex;flex-wrap:wrap;gap:14px 6px" id="icons"></div></div>
+    </section>
+
+    <section class="s" id="components">
+      <div class="sh"><span class="no">02</span><h2>Components</h2><p>Every surface is a window. The active window's title turns graphite. Floating windows add a hard 5/5/0 shadow //</p></div>
+      <div class="cols c3" id="comps"></div>
+    </section>
+
+    <section class="s" id="motion">
+      <div class="sh"><span class="no">03</span><h2>Motion</h2><p>Navigation is instant. Motion confirms that something changed. Chrome moves in CRT steps; content moves smoothly //</p></div>
+      <div class="win"><div class="wt"><span class="t">MOTION_TOKENS</span><span class="stripes"></span><span data-ctl></span></div><table class="tbl">
+        <tr><th>Token</th><th>Value</th><th>Used for</th></tr>
+        <tr><td>snap</td><td>80ms · ease-out</td><td>Button press offset, toggle knob</td></tr>
+        <tr><td>quick</td><td>140ms · ease-out</td><td>Palette, scrim, chord HUD</td></tr>
+        <tr><td>base</td><td>200ms · steps(4) + type-on</td><td>Status windows (toasts): wipe in, text types on</td></tr>
+        <tr><td>window</td><td>220ms · steps(4)</td><td>Floating window clip-wipe from the title bar down</td></tr>
+        <tr><td>row-out</td><td>220ms · ease-out</td><td>Archive/move/trash; the next row is focused first</td></tr>
+        <tr><td>arrive</td><td>900ms · steps(6)</td><td>New mail flashes graphite, then steps back</td></tr>
+        <tr><td>0ms</td><td>never animated</td><td>j/k, focus moves, folder switches, typing</td></tr></table></div>
+      <div class="cols c3" id="demos"></div>
+    </section>
+
+    <section class="s" id="live">
+      <div class="sh"><span class="no">04</span><h2>Live prototype</h2><p>Click to capture the keyboard: j k e # s ⇧S x v h c r ; / ⌘K ? z, then g followed by i d s f. The window controls work: ▢ collapses the sidebar, ▣ maximizes the reader. Press Esc twice to release //</p></div>
+      <div class="live-ctl">
+        <button class="btn sm" data-preset="inbox">Reset</button>
+        <button class="btn sm" data-preset="newmail">New mail arrives</button>
+        <button class="btn sm" data-preset="agent">Agent archives via MCP</button>
+        <button class="btn sm" data-preset="offline">Toggle offline</button>
+        <span class="sp"></span>
+        <button class="btn sm quiet" id="sigbtn">Signal: off</button>
+        <button class="btn sm quiet" id="themebtn">Theme</button>
+      </div>
+      <div class="win on" id="livewin"><div class="wt"><span class="t">TERMINAL_MAIL.APP // 1440×900 // LIVE</span><span class="stripes"></span><span class="h" id="capstate">KEYBOARD_CAPTURE: OFF</span><span class="stripes"></span><span data-ctl></span></div><div class="wb" style="overflow:hidden"><div class="frame" id="liveframe"><div class="st" id="livestage"></div><div class="capture" id="capture"><span>&gt;&gt; Click to capture keyboard</span></div></div></div></div>
+    </section>
+
+    <section class="s" id="screens">
+      <div class="sh"><span class="no">05</span><h2>Screens</h2><p>Every page and state at 1440×900, plus 390×844 for the PWA on phones. Click any screen to enlarge it //</p></div>
+      <div id="screenlist" style="display:grid;gap:34px"></div>
+    </section>
+
+    <section class="s" id="flows">
+      <div class="sh"><span class="no">06</span><h2>Flows</h2></div>
+      <div id="flowlist" style="display:grid;gap:40px"></div>
+    </section>
+
+    <section class="s" id="keys">
+      <div class="sh"><span class="no">07</span><h2>Keymap</h2><p>Gmail-compatible, rebindable. Chords time out after 900ms. Letters are ignored while typing. Compose: ⌘↵ sends, Esc minimizes and never discards. z undoes for 10s //</p></div>
+      <div class="win"><div class="wt"><span class="t">KEYMAP.SYS // DEFAULT</span><span class="stripes"></span><span data-ctl></span></div><div class="kbmap" id="kbmap"></div></div>
+    </section>
+
+    <section class="s" id="sync">
+      <div class="sh"><span class="no">08</span><h2>Sync states</h2><p>The status bar is the sync engine's readout //</p></div>
+      <div id="syncstates" style="display:grid;gap:12px"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ===================== ICONS ===================== */
+const BM={
+folder:[".........",".111.....","1...11111","1.......1","1.......1","1.......1","1.......1","111111111","........."],
+inbox:[".........","1.......1","1.......1","1.......1","111...111","1..111..1","1.......1","111111111","........."],
+send:[".........","11.......","1.11.....","1...11...","1.....111","1...11...","1.11.....","11.......","........."],
+draft:["......11.",".....1..1","....1..1.","...1..1..","..1..1...",".1..1....","11.1.....","111......","........."],
+trash:["...111...","111111111",".1.....1.",".1.1.1.1.",".1.1.1.1.",".1.1.1.1.",".1.....1.",".1111111.","........."],
+archive:["111111111","1.......1","111111111",".1.....1.",".1.111.1.",".1.....1.",".1.....1.",".1111111.","........."],
+flag:["1........","11111111.","1111111..","111111...","1111111..","11111111.","1........","1........","1........"],
+clock:["..11111..",".1.....1.","1...1...1","1...1...1","1...111.1","1.......1",".1.....1.","..11111..","........."],
+star:["....1....","....1....","...111...","111111111",".1111111.","..11111..",".111.111.",".11...11.","........."],
+warn:["....1....","...1.1...","...1.1...","..1.1.1..","..1.1.1..",".1..1..1.",".1.....1.","1...1...1","111111111"],
+clip:["..111....",".1...1...",".1.1.1...",".1.1.1...",".1.1.1...",".1.1.1...",".1...1...","..111....","........."],
+search:[".1111....","1....1...","1....1...","1....1...","1....1...",".1111....",".....11..","......11.",".......11"],
+agent:["....1....",".1111111.",".1.....1.",".1.1.1.1.",".1.....1.",".1.111.1.",".1111111.","1.1...1.1","........."],
+gear:["...1.1...",".1111111.",".11...11.","11.....11",".1.....1.","11.....11",".11...11.",".1111111.","...1.1..."],
+junk:["111111111","1...1...1","1...1...1","1...1...1","1.......1","1...1...1","1.......1","111111111","........."],
+reply:["...1.....","..11.....",".111111..","1111...1.",".111....1","..11....1","...1....1",".........","........."],
+fwd:[".....1...",".....11..","..111111.",".1...1111","1....111.","1....11..","1....1...",".........","........."],
+check:[".........","........1",".......11","1.....11.","11...11..",".11.11...","..111....","...1.....","........."],
+lock:["..11111..",".1.....1.",".1.....1.","111111111","1.......1","1...1...1","1...1...1","111111111","........."],
+user:["...111...","..1...1..","..1...1..","...111...",".........",".1111111.","1.......1","1.......1","........."],
+mail:["111111111","11.....11","1.1...1.1","1..1.1..1","1...1...1","1.......1","1.......1","111111111","........."],
+eye:[".........","..11111..",".1.....1.","1..111..1","1..111..1",".1.....1.","..11111..",".........","........."],
+plus:["....1....","....1....","....1....","....1....","111111111","....1....","....1....","....1....","....1...."],
+wifi:[".........","..11111..",".1.....1.","1..111..1","..1...1..","....1....","....1....",".........","........."],
+key:[".111.....","1...1....","1...11111","1...1.1.1",".111.....",".........",".........",".........","........."],
+up:["....1....","...111...","..11111..",".11.1.11.","....1....","....1....","....1....","....1....","........."],
+down:["....1....","....1....","....1....","....1....",".11.1.11.","..11111..","...111...","....1....","........."],
+watch:["..11111..",".1.....1.","1..1....1","1...1...1","1....11.1","1.......1",".1.....1.","..11111..","...111..."],
+bolt:[".....11..","....11...","...11....","..111111.",".....11..","....11...","...11....","..1......","........."],
+};
+function ico(n){const b=BM[n];if(!b)return'';let r='';b.forEach((row,y)=>{let x=0;while(x<9){if(row[x]==='1'){let s=x;while(x<9&&row[x]==='1')x++;r+=`<rect x="${s}" y="${y}" width="${x-s}" height="1"/>`}else x++}});return `<svg class="ico" viewBox="0 0 9 9" aria-hidden="true">${r}</svg>`}
+const TRI=`<svg class="tri" viewBox="0 0 96 84" aria-hidden="true"><path d="M48 4 92 80H4Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="miter"/><rect x="43" y="28" width="10" height="30" fill="currentColor"/><rect x="43" y="64" width="10" height="9" fill="currentColor"/></svg>`;
+const CTL=(a='')=>`<span class="ctl"><i title="Minimize" ${a?`data-ctl-a="min-${a}"`:''}><svg viewBox="0 0 9 9"><rect x="1" y="7" width="7" height="1.5"/></svg></i><i title="Maximize" ${a?`data-ctl-a="max-${a}"`:''}><svg viewBox="0 0 9 9"><path d="M1 1h7v7H1z M2.5 3v3.5h4V3z" fill-rule="evenodd"/></svg></i><i title="Close" ${a?`data-ctl-a="close-${a}"`:''}><svg viewBox="0 0 9 9"><path d="M1 1.8 1.8 1 4.5 3.7 7.2 1 8 1.8 5.3 4.5 8 7.2 7.2 8 4.5 5.3 1.8 8 1 7.2 3.7 4.5z"/></svg></i></span>`;
+const K=(...k)=>k.map(x=>`<kbd>${x}</kbd>`).join('');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const spine=(t,n,a)=>`<div class="spine" data-a="${a}" title="Restore">${ico('plus')}<span class="vtxt">${t}</span>${n!=null?`<span class="dm" style="font-size:16px">${n}</span>`:''}<span class="stripes"></span></div>`;
+const W=(title,body,o={})=>`<section class="win ${o.on?'on':''} ${o.cls||''}" ${o.style?`style="${o.style}"`:''}><div class="wt"><span class="t">${title}</span><span class="stripes"></span>${o.right||''}${o.hint?`<span class="h">${o.hint}</span>`:''}${o.noctl?'':CTL(o.a)}</div><div class="wb" ${o.bstyle?`style="${o.bstyle}"`:''}>${body}</div></section>`;
+const ini=n=>n.replace(/^To: /,'').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+const prog=(p,o={})=>`<div class="prog ${o.thin?'thin':''}" ${o.style?`style="${o.style}"`:''}><div class="f" style="width:${p}%"></div>${p<100?'<div class="d"></div><div class="d2"></div><div class="d3"></div>':''}${o.pc?`<span class="pc">${p}%</span>`:''}</div>`;
+
+/* ===================== DATA (fictional) ===================== */
+const MSGS=[
+{id:1,f:'inbox',who:'Mira Okafor',em:'mira@kestrel.studio',subj:'Q4 launch review: notes + open questions',snip:'Pulled together the notes from Tuesday. Three things block the ship date, and only one of them is ours…',t:'09:41',day:'Today',un:1,fl:'red',att:2,n:4,vip:1},
+{id:2,f:'inbox',who:'Halcyon CI',em:'ci@halcyon.dev',subj:'build #4821 failed on main · lint',snip:'golangci-lint: 2 issues in internal/components/mailsync/reconcile.go (errcheck, ineffassign)',t:'09:12',day:'Today',un:1,ag:1},
+{id:3,f:'inbox',who:'Juno Park',em:'juno.park@icloud.com',subj:'Re: apartment viewing Saturday 11:00',snip:'Perfect, see you there. The buzzer is broken so just text me when you arrive and I’ll come down.',t:'08:57',day:'Today',un:1,n:3},
+{id:4,f:'inbox',who:'Field Notes Weekly',em:'issue@fieldnotes.email',subj:'Issue 212: the quiet power of defaults',snip:'This week: why the best settings are the ones nobody touches, a teardown of three onboarding flows, and…',t:'07:30',day:'Today',list:1},
+{id:5,f:'inbox',who:'Ledgerline Billing',em:'billing@ledgerline.io',subj:'Invoice INV-20931 is ready',snip:'Your October invoice for 1,240.00 EUR is attached. Payment is due on November 12.',t:'Yesterday',day:'Yesterday',fl:'green',att:1},
+{id:6,f:'inbox',who:'Tomasz Wren',em:'t.wren@wrenlegal.eu',subj:'draft contract v3 (redlines)',snip:'Attached v3 with your comments addressed. Clause 7.2 still needs a decision on the liability cap.',t:'Yesterday',day:'Yesterday',un:1,att:1,n:2},
+{id:7,f:'inbox',who:'Studio Kestrel',em:'hello@kestrel.studio',subj:'Moodboard round 2',snip:'Leaning harder into the bitmap direction. Two options for the wordmark; we prefer B but want your gut.',t:'Yesterday',day:'Yesterday',att:6},
+{id:8,f:'inbox',who:'Ana Ruiz',em:'ana.ruiz@me.com',subj:'dinner thursday?',snip:'The new place on Rua das Flores finally opened. 20:00? I can book for four if Juno is in.',t:'Mon',day:'This week'},
+{id:9,f:'inbox',who:'Parcelpost',em:'track@parcelpost.example',subj:'Your package is out for delivery',snip:'Expected between 14:00 and 16:00. Track live or choose a safe place.',t:'Mon',day:'This week'},
+{id:10,f:'inbox',who:'Hearthstay',em:'trips@hearthstay.example',subj:'Booking confirmed: Lisbon, Nov 14–18',snip:'Your stay at Casa do Rio is confirmed. Check-in from 15:00. Host: Beatriz.',t:'Sun',day:'This week',fl:'blue'},
+{id:11,f:'inbox',who:'Forgehub',em:'notifications@forgehub.example',subj:'[mcp-icloud-email] PR #42 sync engine: P0',snip:'claude-bot requested your review: port imap client to go-imap v2 and add session manager',t:'Sun',day:'This week',ag:1,n:5},
+{id:12,f:'inbox',who:'Noor Haddad',em:'noor@haddad.design',subj:'intro: Oleg <> Priya (design systems)',snip:'Priya ran the design system at a large fintech and is now independent. You two should talk about tokens.',t:'Oct 24',day:'Older'},
+{id:13,f:'inbox',who:'Kite Bank',em:'no-reply@kitebank.example',subj:'Your October statement is available',snip:'Log in to view your statement. We will never ask for your password by email.',t:'Oct 23',day:'Older'},
+{id:14,f:'inbox',who:'Linnea Berg',em:'linnea.berg@icloud.com',subj:'photos from the trip',snip:'Finally sorted them. The one at the lighthouse is my favourite. Full res in the shared album too.',t:'Oct 22',day:'Older',att:12,fl:'purple'},
+{id:15,f:'snoozed',who:'Priya Natarajan',em:'priya@natarajan.studio',subj:'Re: tokens workshop',snip:'Happy to do a session in November, sending a few dates.',t:'Oct 20',day:'Returns Mon 08:00',sn:'Mon 08:00'},
+{id:16,f:'drafts',who:'Draft',em:'',subj:'Re: draft contract v3 (redlines)',snip:'Tomasz, thanks. On 7.2 let’s cap at 12 months of fees and…',t:'Yesterday',day:'Yesterday',dr:1},
+{id:17,f:'sent',who:'To: Mira Okafor',em:'',subj:'Re: Q4 launch review',snip:'Agree on the scope cut. I’ll own the sync engine piece.',t:'Tue',day:'This week'},
+{id:18,f:'sent',who:'To: Tomasz Wren',em:'',subj:'Re: draft contract v3 (redlines)',snip:'Tomasz, thanks for v3. On 7.2 we propose capping liability at 12 months of fees.',t:'08:40',day:'Today',ag:1},
+{id:19,f:'junk',who:'Prize Desk',em:'win@prize-desk.example',subj:'You have (1) unclaimed reward!!',snip:'Click now to claim before midnight…',t:'Oct 21',day:'Older'},
+];
+const FOLDERS=[['inbox','INBOX','inbox'],['vip','VIP','star'],['flagged','FLAGGED','flag'],['snoozed','SNOOZED','clock'],['drafts','DRAFTS','draft'],['sent','SENT','send'],['archive','ARCHIVE','archive'],['junk','JUNK','junk'],['trash','TRASH','trash']];
+const USERF=[['/_clients',0],['/_kestrel',1],['/_ledgerline',1,1],['/_finance',0],['/_travel',0],['/_receipts',0],['/_2026',1,1]];
+const THREAD=[
+ {who:'Mira Okafor',em:'mira@kestrel.studio',t:'Tue 16:02',snip:'Kicking off the Q4 review thread. Agenda attached, please add anything missing before Thursday.'},
+ {who:'Oleg Pustovit',em:'oleg@icloud.com',t:'Tue 18:40',snip:'Added the sync engine milestones. P0 is the go-imap v2 port; I think it’s a week.'},
+ {who:'Juno Park',em:'juno.park@icloud.com',t:'Wed 10:15',snip:'Design review moved to Thursday 15:00, same room.'},
+ {who:'Mira Okafor',em:'mira@kestrel.studio',t:'Today 09:41',body:['Hi Oleg,','Pulled together the notes from Tuesday. Three things block the ship date, and only one of them is ours:','<b>1.</b> Sync engine P0 (us): the session manager has to land before anything in the web client can rely on the mirror.<br><b>2.</b> Legal sign-off on the agent guardrails copy (Tomasz).<br><b>3.</b> Final wordmark from Kestrel.','Can you confirm the P0 estimate still holds after the go-imap v2 spike? If it does, we keep Nov 18.','Thanks,<br>Mira']},
+];
+
+/* ===================== STATE ===================== */
+const clone=o=>JSON.parse(JSON.stringify(o));
+function S(o={}){return Object.assign({folder:'inbox',cur:0,picked:[],overlay:null,compose:null,minis:[],toast:null,q:'',filter:'all',chord:null,offline:false,view:'mail',tab:'account',pal:'',palI:0,pickI:0,expanded:false,reply:false,msgs:clone(MSGS),search:null,arrive:null,focus:'list',pending:0,preview:false,zero:false,authErr:false,hover:-1,signal:false,side:true,max:false,syncId:48213},o)}
+function visible(s){
+  if(s.zero) return [];
+  let m=s.msgs;
+  if(s.search){const q=s.search.toLowerCase().replace(/(from|has|after|in):\S+/g,'').trim();m=m.filter(x=>x.f!=='trash'&&(!q||(x.subj+x.snip+x.who).toLowerCase().includes(q)));if(/has:attachment/.test(s.search))m=m.filter(x=>x.att);if(/from:mira/.test(s.search))m=m.filter(x=>/mira|kestrel/i.test(x.em));return m}
+  const f=s.folder;
+  m=f==='vip'?m.filter(x=>x.vip&&x.f==='inbox'):f==='flagged'?m.filter(x=>x.fl&&x.f!=='trash'):m.filter(x=>x.f===f);
+  if(s.filter==='unread')m=m.filter(x=>x.un);if(s.filter==='flagged')m=m.filter(x=>x.fl);if(s.filter==='att')m=m.filter(x=>x.att);
+  return m;
+}
+function count(s,k){const v=visible({...s,folder:k,search:null,filter:'all',zero:false});return k==='drafts'||k==='snoozed'?v.length:v.filter(x=>x.un).length}
+const fname=s=>(FOLDERS.find(f=>f[0]===s.folder)||[0,'INBOX'])[1];
+
+/* ===================== APP RENDER ===================== */
+function sidebar(s){
+  let tree;
+  if(s.view==='settings'){
+    tree=`<div class="ni" data-a="mail">${ico('inbox')} ../MAIL<span class="n">${K('esc')}</span></div><div class="ng">/_settings</div>`+TABS.map(([k,l,i],n)=>`<div class="ni ${s.tab===k?'on':''}" data-tab="${k}"><span class="br">${n===TABS.length-1?'└':'├'}</span>${ico(i)}${l}</div>`).join('');
+  } else {
+    tree=FOLDERS.map(([k,l,i])=>{const n=count(s,k);return `<div class="ni ${s.folder===k&&!s.search?'on':''}" data-f="${k}">${ico(i)} ${l}${n?`<span class="n">${n}</span>`:''}</div>`}).join('');
+    tree+=`<div class="ng">/_folders<span class="sp"></span>${ico('plus')}</div>`+USERF.map(([n,d,last],ui)=>`<div class="ni ${s.drop===ui?'ants':''}">${d?`<span class="br">${last?'└':'├'}</span>`:''}${ico('folder')}${n}</div>`).join('');
+  }
+  const body=`<div class="sbtop"><button class="btn pri wide" data-a="compose">${ico('plus')} COMPOSE<span class="sp"></span>${K('c')}</button><button class="sbs" data-a="search">${ico('search')} SEARCH_<span class="sp"></span>${K('/')}</button></div><div class="tree">${tree}</div><div class="sfill"></div><div class="quota"><div class="l"><span>STORAGE</span><span>41.2/200 GB</span></div>${prog(21,{thin:1})}<div class="l" style="margin-top:4px"><span>${ico('agent')} AGENTS</span><span>2 LINKED</span></div><div class="l" style="margin-top:2px;color:var(--mute)"><span>oleg@icloud.com</span><span class="ib" data-a="settings" style="width:auto;height:auto">${ico('gear')}</span></div></div>`;
+  return W(s.view==='settings'?'SETTINGS.SYS':'MAILBOXES.SYS',body,{on:s.focus==='side',cls:'side',a:'side'});
+}
+function row(m,s,i){
+  const cur=i===s.cur, picked=s.picked.includes(m.id), sel=s.picked.length>0;
+  const hl=t=>{if(!s.search)return esc(t);const q=s.search.replace(/(from|has|after|in):\S+/g,'').trim();if(!q)return esc(t);return esc(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'),'<mark>$1</mark>')};
+  const tags=(m.ag?`<span class="tag">[AGENT]</span>`:'')+(m.dr?'<span class="tag">[DRAFT]</span>':'')+(m.sn?`<span class="tag">[${m.sn}]</span>`:'');
+  return `<div class="row ${sel?'sel':''} ${m.un?'un':''} ${cur?'cur':''} ${picked?'picked':''} ${s.hover===i?'hov':''} ${s.arrive===m.id?'arrive':''}" data-i="${i}" data-id="${m.id}">
+   <div class="mk">${sel?`<span class="chk ${picked?'on':''}"></span>`:''}</div>
+   <div class="l1"><span class="who">${esc(m.who)}</span>${m.n?`<span class="cnt">[${m.n}]</span>`:''}${m.vip?ico('star'):''}${tags}<span class="meta">${m.att?ico('clip'):''}${m.fl?`<span class="flag ${m.fl}"></span>`:''}${m.t}</span></div>
+   <div class="l2"><b>${hl(m.subj)}</b> · ${hl(m.snip)}</div>
+   <div class="qa"><button class="ib" title="Archive e">${ico('archive')}</button><button class="ib" title="Snooze h">${ico('clock')}</button><button class="ib" title="Flag s">${ico('flag')}</button><button class="ib" title="Trash #">${ico('trash')}</button></div></div>`;
+}
+function list(s){
+  const v=visible(s);
+  let title=s.search?`SEARCH // ${v.length} RESULTS`:`${fname(s)} // ${s.folder==='inbox'?'1,284':v.length} MSG // ${v.filter(x=>x.un).length} UNREAD`;
+  let ph;
+  if(s.picked.length) ph=`<div class="ph" style="background:var(--acc);color:var(--acc-ink)"><span class="chk on" style="margin-left:6px"></span><span class="cap" style="font-weight:600">${s.picked.length} SELECTED</span><span class="sp"></span><span class="cap" style="opacity:.8;font-size:10px">E ARCHIVE · # TRASH · V MOVE · ESC CLEAR</span></div>`;
+  else if(s.overlay==='search') ph=`<div class="ph">${ico('search')}<span class="mono mute">&gt;&gt;</span><input id="sq" value="${esc(s.q)}" placeholder="from: has:attachment after: in:" autocomplete="off"><kbd>esc</kbd></div>`;
+  else if(s.search) ph=`<div class="ph"><span class="chip inv">from:mira</span><span class="chip inv">has:attachment</span><span class="chip">“launch”</span><span class="sp"></span><span class="cap mute" style="font-size:10px">LOCAL 4MS · SERVER 182MS</span></div>`;
+  else ph=`<div class="ph"><div class="seg">${[['all','ALL'],['unread','UNREAD'],['flagged','FLAGGED'],['att','FILES']].map(([k,l])=>`<span class="${s.filter===k?'on':''}" data-filter="${k}">${l}</span>`).join('')}</div><span class="sp"></span><button class="ib" title="Select x">${ico('check')}</button></div>`;
+  const note=s.offline?`<div class="lnote">${ico('wifi')} OFFLINE // ${s.pending} CHANGE${s.pending===1?'':'S'} QUEUED //</div>`:'';
+  let h='';
+  if(!v.length) h=`<div class="empty dots" style="height:100%"><div class="win pop" style="width:290px;text-align:left"><div class="wt"><span class="t">INBOX.STATUS</span>${CTL()}</div><div style="padding:16px 18px;display:grid;gap:10px"><div class="disp" style="font-size:22px">INBOX: EMPTY</div><div class="prm"><div>NOTHING_PENDING //</div><div>1 SNOOZED RETURNS MON //</div></div>${prog(100,{thin:1})}</div></div></div>`;
+  let last='';
+  v.forEach((m,i)=>{if(!s.search&&m.day!==last){h+=`<div class="day">${m.day}</div>`;last=m.day}h+=row(m,s,i)});
+  return W(title,ph+note+`<div class="rows">${h}</div>`,{on:s.focus==='list',cls:'list',a:'list'});
+}
+function reader(s){
+  const v=visible(s), m=v[s.cur];
+  if(!m) return W('MESSAGE_VIEWER',`<div class="empty dots"><span class="cap mute">NO_MESSAGE_SELECTED // PRESS ${K('j')}</span></div>`,{cls:'reader',a:'reader'});
+  const tb=`<div class="ph" style="gap:2px">${[['archive','e','ARCHIVE'],['snooze','h','SNOOZE'],['move','v','MOVE'],['flag','s','FLAG'],['trash','#','TRASH']].map(([a,k,l])=>`<button class="tk" data-a="${a}">${K(k)} ${l}</button>`).join('')}<span class="sp"></span><button class="ib" title="Previous k" data-a="prev">${ico('up')}</button><button class="ib" title="Next j" data-a="next">${ico('down')}</button></div>`;
+  const lines=[m.n?`${m.n} MESSAGES`:`1 MESSAGE`,`FOLDER: ${s.search?'INBOX':fname(s)}`,m.fl?`FLAG: <span class="flag ${m.fl}" style="vertical-align:-1px"></span> ${m.fl.toUpperCase()}`:'',m.vip?'VIP: TRUE':'',m.ag?`${m.f==='sent'?'SENT_BY':'LABELED_BY'}: CLAUDE_DESKTOP <a class="link">UNDO</a>`:''].filter(Boolean);
+  const head=`<div class="rhead crop"><h1 class="subj">${esc(m.subj)}</h1><div class="prm" style="color:var(--ink-2)"><div>${lines.join(' // ')} //</div></div></div>`;
+  let notes='';
+  if(m.list) notes+=`<div class="notice">${ico('mail')} MAILING_LIST: FIELDNOTES.EMAIL<span class="sp"></span><a class="link">UNSUBSCRIBE</a></div>`;
+  if(m.list||m.id===7) notes+=`<div class="notice">${ico('eye')} REMOTE_CONTENT: BLOCKED // 3 TRACKERS STRIPPED<span class="sp"></span><a class="link">LOAD VIA PROXY</a></div>`;
+  let body='';
+  if(m.id===1){
+    if(s.expanded) THREAD.forEach((x,i)=>body+=msgE(x.body?x:{...x,body:[x.snip]},i===3?m:null));
+    else{body+=msgC(THREAD[0]);body+=`<div class="more">${ico('mail')} 2 EARLIER MESSAGES // PRESS ${K(';')}</div>`;body+=msgE(THREAD[3],m)}
+  } else body+=msgE({who:m.who.replace(/^To: /,'Oleg Pustovit → '),em:m.em,t:m.t,body:[m.f==='sent'?esc(m.snip):'Hi Oleg,',m.f==='sent'?'All other redlines accepted. Happy to sign once 7.2 is updated.':esc(m.snip),'Let me know if anything is unclear.','Best,<br>'+(m.f==='sent'?'Oleg':esc(m.who.split(' ')[0]))]},m);
+  const first=m.who.replace(/^To: /,'').split(' ')[0];
+  const qr=s.reply?`<div class="qr open"><div class="wt"><span class="t">REPLY // ${esc(first.toUpperCase())}</span><span class="h">DRAFT SAVED TO ICLOUD</span>${CTL()}</div><div class="cf"><span class="l">To</span><span class="chip">${esc(m.who.replace(/^To: /,''))}</span><span class="sp"></span><span class="mute" style="font-size:12px">from oleg@icloud.com ▾</span></div><div class="cbody" style="min-height:100px"><p>Hi ${esc(first)},</p><p>Confirmed: P0 holds after the spike. go-imap v2 gives us IDLE, MOVE and UIDPLUS out of the box<span class="caret"></span></p></div><div class="cft"><button class="btn pri sm">SEND ${K('⌘','↵')}</button><button class="btn sm quiet">${ico('clock')} LATER</button><button class="ib">${ico('clip')}</button><span class="sp"></span><button class="ib">${ico('trash')}</button></div></div>`
+   :`<div class="qr" data-a="reply">${ico('reply')} &gt;&gt; REPLY_TO_${esc(first.toUpperCase())}<span class="caret" style="height:12px;width:6px"></span><span class="sp"></span><span style="display:flex;gap:8px;font-size:10.5px">${K('r')} REPLY ${K('a')} ALL ${K('f')} FWD</span></div>`;
+  return W(`MESSAGE_VIEWER // <span class="dm" style="font-size:13px">${String(s.cur+1).padStart(2,'0')}/${String(v.length).padStart(2,'0')}</span>`,tb+`<div class="rc"><div class="rin">${head}${notes}${body}</div></div>${qr}`,{on:s.focus==='reader',cls:'reader',a:'reader'});
+}
+function msgC(x){return `<div class="tm c"><span class="av">${ini(x.who)}</span><span class="w">${x.who}</span><span class="s">${x.snip}</span><span class="d">${x.t}</span></div>`}
+function msgE(x,m){
+  const files=m&&m.att?`<div class="files">${['agenda_q4.pdf','notes_tue.md','wordmark_b.png'].slice(0,Math.min(m.att,3)).map((n,i)=>`<div class="file"><div class="pv" style="background:${i===2?'repeating-conic-gradient(var(--ramp-4) 0 25%,transparent 0 50%) 0 0/2px 2px':'radial-gradient(var(--dot) .8px,transparent 1px) 0 0/4px 4px'}"></div><div class="nm"><span>${n}</span><span class="z">${['212K','8K','1.4M'][i]}</span></div></div>`).join('')}${m.att>3?`<div class="file" style="display:grid;place-items:center;grid-template-rows:1fr"><span class="cap">+${m.att-3} MORE</span></div>`:''}</div>`:'';
+  return `<div class="tm e"><div class="h"><span class="av">${ini(x.who)}</span><div><div class="w">${x.who}</div><div class="a">${x.em?x.em+' → me':''}</div></div><span class="d">${x.t}</span></div><div class="body">${(x.body||[]).map(p=>`<p>${p}</p>`).join('')}</div>${files}</div>`;
+}
+const PAL=[['Actions'],['Archive','archive',['e']],['Move to…','folder',['v']],['Snooze…','clock',['h']],['Flag color…','flag',['⇧','s']],['Mark as unread','mail',['⇧','u']],['Reply all','reply',['a']],['Unsubscribe from Field Notes Weekly','mail',[]],['Create rule from this message…','gear',[]],['Go to'],['Inbox','inbox',['g','i']],['Drafts','draft',['g','d']],['/_clients/_kestrel','folder',[]],['Settings'],['Identities & aliases','user',['⌘',',']],['Agent activity','agent',[]],['Toggle night shift','eye',[]]];
+const PAL_ACT=['archive','move','snooze','flagc','unread','reply',null,'settings:rules','go:inbox','go:drafts',null,'settings:identities','settings:agents','theme'];
+function palette(s){
+  const q=s.pal.toLowerCase();const items=PAL.filter(x=>x.length===1?!q:x[0].toLowerCase().includes(q));let idx=-1;
+  const list=items.map(x=>{if(x.length===1)return`<div class="ps">// ${x[0]}</div>`;idx++;return`<div class="pi ${idx===s.palI?'on':''}">${ico(x[1])}<span>${x[0]}</span><span class="k">${K(...x[2])}</span></div>`}).join('');
+  return `<div class="scrim"></div><div class="ov pal m-pal">${W('COMMAND_PALETTE',`<div class="pq"><span>&gt;&gt;</span><input id="pq" value="${esc(s.pal)}" placeholder="type a command or search" autocomplete="off"></div><div style="max-height:430px;overflow:auto;padding-bottom:6px">${list||'<div class="ps">NO_MATCH // ↵ SEARCHES MAIL</div>'}</div><div class="pft"><span>↑↓ NAVIGATE</span><span>↵ RUN</span><span>ESC CLOSE</span><span class="sp"></span><span>${items.filter(x=>x.length>1).length} COMMANDS</span></div>`,{on:1,cls:'pop',noctl:1,hint:'ESC'})}</div>`;
+}
+const MOVE=['/_clients','/_clients/_kestrel','/_clients/_ledgerline','/_finance','/_travel','/_receipts'];
+const SNZ=[['Later today','18:00'],['Tomorrow','Thu 08:00'],['This weekend','Sat 09:00'],['Next week','Mon 08:00'],['Someday','—'],['Pick a date…','']];
+const FLC=['red','orange','yellow','green','blue','purple','gray'];
+function picker(s){
+  const pos='left:50%;top:140px;margin-left:-180px';const it=(on,a,b,c)=>`<div class="pi ${on?'on':''}">${a}<span>${b}</span><span class="k">${c}</span></div>`;
+  if(s.overlay==='move'){const f=MOVE.filter(x=>x.includes('cli'));return `<div class="scrim"></div><div class="ov m-open" style="${pos}">${W('MOVE_TO',`<div class="pq" style="height:40px;font-size:14px"><span>&gt;&gt;</span><span>cli<span class="caret"></span></span></div>${f.map((x,i)=>it(i===s.pickI,ico('folder'),x,K(i+1))).join('')}<div class="pi mute">${ico('plus')}<span>CREATE “/_cli…”</span></div>`,{on:1,cls:'pop picker',noctl:1,hint:'ESC'})}</div>`}
+  if(s.overlay==='snooze') return `<div class="scrim"></div><div class="ov m-open" style="${pos}">${W('SNOOZE_UNTIL',SNZ.map((x,i)=>it(i===s.pickI,ico('clock'),x[0],`<span style="opacity:.6;margin-right:8px">${x[1]}</span>${K(i+1)}`)).join('')+`<div class="ps" style="padding-bottom:10px">// MOVES TO ICLOUD “SNOOZED” · RETURNS UNREAD</div>`,{on:1,cls:'pop picker',noctl:1,hint:'ESC'})}</div>`;
+  if(s.overlay==='flag') return `<div class="scrim"></div><div class="ov m-open" style="${pos}">${W('FLAG_COLOR',FLC.map((x,i)=>it(i===s.pickI,`<span class="flag ${x}" style="${i===s.pickI?'--ink:var(--acc-ink)':''}"></span>`,x.toUpperCase(),K(i+1))).join('')+`<div class="ps" style="padding-bottom:10px">// SYNCED TO APPLE MAIL</div>`,{on:1,cls:'pop picker',noctl:1,hint:'ESC'})}</div>`;
+  return '';
+}
+function compose(s){
+  if(!s.compose) return s.minis.length?`<div class="minis">${s.minis.map(t=>`<section class="win pop" style="width:270px"><div class="wt"><span class="t">${t}</span>${CTL()}</div></section>`).join('')}</div>`:'';
+  const full=s.compose==='full';
+  const b=`<div class="cf"><span class="l">From</span><span class="chip">oleg@icloud.com ▾</span></div>
+  <div class="cf" style="position:relative"><span class="l">To</span><span class="chip">Mira Okafor</span><span class="chip">juno.park@icloud.com</span><span>pri<span class="caret"></span></span><span class="sp"></span><span class="cap mute" style="font-size:10px">CC BCC</span>
+   <section class="win pop" style="position:absolute;left:76px;top:36px;width:380px;z-index:3"><div class="pi on">${ico('user')}<span>Priya Natarajan</span><span class="k" style="opacity:.65;font-size:12px">priya@natarajan.studio</span></div><div class="pi">${ico('user')}<span>Priya (work)</span><span class="k mute" style="font-size:12px">p.n@bigfin.example</span></div></section></div>
+  <div class="cf"><span class="l">Subject</span><span style="font-weight:600">P0 estimate holds</span></div>
+  <div class="cbody"><p>Mira, Juno,</p><p>The go-imap v2 spike went well. IDLE, MOVE and UIDPLUS work against iCloud, and CONDSTORE is advertised after login. P0 stays at one week, so Nov 18 holds.</p><p>I’ll share the session-manager design in the PR tonight.</p><div class="sig">— Oleg</div><div class="files" style="padding:12px 0 0"><div class="file"><div class="pv" style="background:radial-gradient(var(--dot) .8px,transparent 1px) 0 0/4px 4px"></div><div class="nm"><span>spike_results.md</span><span class="z">4K</span></div></div></div></div>
+  <div class="cft"><button class="btn pri">SEND ${K('⌘','↵')}</button><button class="btn quiet">${ico('clock')} LATER ▾</button><button class="ib" title="Attach">${ico('clip')}</button><button class="ib" title="Formatting" style="font:600 13px var(--f-mono)">Aa</button><span class="sp"></span><span class="cap mute" style="font-size:10px">SAVED // ICLOUD/DRAFTS</span><button class="ib">${ico('trash')}</button></div>`;
+  return `${full?'<div class="scrim"></div>':''}<div class="ov compose ${full?'full':''} m-open">${W('NEW_MESSAGE'+(full?' // FULLSCREEN':''),b,{on:1,cls:'pop',style:'height:100%',bstyle:'display:flex;flex-direction:column',hint:'ESC MIN · ⌘⇧F FULL'})}</div>`;
+}
+function help(){
+  const g=[['Navigate',[['Next / previous','j','k'],['Open','o'],['Back to list','u'],['Expand thread',';'],['Go to inbox','g','i'],['Go to drafts','g','d'],['Go to sent','g','s'],['Go to flagged','g','f']]],
+  ['Triage',[['Archive','e'],['Trash','#'],['Move','v'],['Snooze','h'],['Flag','s'],['Flag color','⇧','s'],['Junk','!'],['Mark read','⇧','i'],['Mark unread','⇧','u'],['Undo','z']]],
+  ['Select',[['Toggle','x'],['Extend','⇧','j'],['All','*','a'],['None','*','n'],['Unread','*','u']]],
+  ['Write',[['Compose','c'],['Reply','r'],['Reply all','a'],['Forward','f'],['Send','⌘','↵'],['Minimize','esc']]],
+  ['System',[['Command palette','⌘','k'],['Search','/'],['Settings','⌘',','],['Keymap','?'],['Next window','tab']]]];
+  return `<div class="scrim"></div><div class="ov help m-open">${W('KEYMAP.SYS',g.map(([t,r])=>`<div class="hg"><h4>// ${t}</h4>${r.map(([l,...k])=>`<div class="kr"><span>${l}</span><span class="ks">${K(...k)}</span></div>`).join('')}</div>`).join(''),{on:1,cls:'pop',style:'height:100%',noctl:1,hint:'? OR ESC'})}</div>`;
+}
+function toast(s){
+  if(!s.toast)return'';const t=s.toast;
+  return `<div class="toast m-toast" style="${t.right?'left:auto;right:22px':''}">${W(t.title||'STATUS',`<div class="tb">${t.icon?ico(t.icon):''}<span class="m-type">${t.text}</span><span class="sp"></span>${t.undo?`<button class="btn sm">UNDO ${K('z')}</button>`:''}</div>${t.cd?'<div class="cdw"><div class="cd"></div></div>':''}`,{on:1,cls:'pop'})}</div>`;
+}
+function preview(){
+  return `<div class="scrim"></div><div class="ov m-open" style="left:160px;right:160px;top:50px;bottom:56px">${W('PREVIEW // wordmark_b.png // 3 OF 6',`<div style="display:grid;grid-template-rows:1fr auto;height:100%"><div class="dots" style="display:grid;place-items:center"><div style="width:560px;height:350px;background:var(--paper-3);border:var(--frame);display:grid;place-items:center"><div class="disp" style="font-size:56px">KESTREL</div></div></div><div class="cft"><button class="tk">${K('←')} PREV</button><button class="tk">${K('→')} NEXT</button><span class="cap mute" style="font-size:10.5px">1600×1000 · PNG · 1.4 MB</span><span class="sp"></span><button class="btn sm">DOWNLOAD ${K('d')}</button></div></div>`,{on:1,cls:'pop',style:'height:100%'})}</div>`;
+}
+function warnWin(title,lbl,sub,act){return W('WARNING',`${TRI}<div class="warnlbl">${lbl}${sub?`<br><span style="font-weight:400;font-size:11px">${sub}</span>`:''}</div>${act||''}`,{on:1,cls:'pop warnwin'})}
+function statbar(s){
+  const left=s.offline?`<span><span class="led off"></span>&gt;&gt; LINK: DOWN // ${s.pending} TX QUEUED //</span>`:s.authErr?`<span><span class="led off"></span>&gt;&gt; IMAP: AUTH_FAILED // SYNC: PAUSED //</span>`:`<span>${s.pending?`<span style="margin-right:6px">${ico('watch')}</span>`:'<span class="blocks live"><i></i><i></i><i></i><i></i></span>'}&gt;&gt; SYNC: LIVE // IMAP: IDLE // <span class="dm" style="font-size:12px">${s.pending}</span> PENDING //</span>`;
+  const mid=s.chord?`<span class="chord">${s.chord} _ // I INBOX · D DRAFTS · S SENT · F FLAGGED</span>`:'';
+  return `<footer class="stat">${left}${mid}<span class="sp"></span><span class="mute">SYNC_ID <span class="dm" style="font-size:12px">${s.syncId}</span></span><span>? KEYMAP // ⌘K CMD</span></footer>`;
+}
+function renderApp(s){
+  if(s.view==='settings') return `<div class="app">${`<div class="panes set">${sidebar(s)}${W('/_settings/_'+s.tab,SET[s.tab](),{on:1,cls:'sc'})}</div>`}${statbar(s)}${toast(s)}</div>`;
+  const cols=s.max?'30px 30px 1fr':(s.side?'232px 444px 1fr':'30px 520px 1fr');
+  let ban='';
+  if(s.authErr) ban=`<div class="ov m-open" style="left:50%;top:230px;width:360px;margin-left:80px">${warnWin('','ICLOUD_AUTH: FAILED','APP PASSWORD REVOKED // SYNC PAUSED',`<div class="prm" style="font-size:11px;text-align:left;width:100%"><div>CACHED MAIL: READABLE //</div><div>SENDING: PAUSED //</div></div><button class="btn pri wide" style="justify-content:center">RELINK ICLOUD ${K('↵')}</button>`)}</div>`;
+  if(s.offline) ban=`<div class="ov m-toast" style="right:22px;top:46px;width:330px">${W('WARNING',`<div style="display:flex;gap:12px;align-items:center;padding:12px"><span style="font-size:26px">${ico('wifi')}</span><div class="prm" style="font-size:11px;line-height:1.6"><div>LINK: DOWN //</div><div>${s.pending} CHANGES QUEUED LOCALLY //</div><div>REPLAY ON RECONNECT</div></div></div>`,{on:1,cls:'pop'})}</div>`;
+  const gh=s.ghost?`<div class="dragghost" style="left:150px;top:350px">${ico('mail')} 4 CONVERSATIONS → /_kestrel</div>`:'';
+  return `<div class="app ${s.signal?'signal':''}">${gh}<div class="panes" style="grid-template-columns:${cols}">${s.side&&!s.max?sidebar(s):spine('MAILBOXES.SYS',count(s,'inbox'),'unside')}${s.max?spine(fname(s)+' // LIST',visible(s).filter(x=>x.un).length,'unmax'):list(s)}${reader(s)}</div>${statbar(s)}${ban}${compose(s)}${s.overlay==='palette'?palette(s):''}${['move','snooze','flag'].includes(s.overlay)?picker(s):''}${s.overlay==='help'?help():''}${s.preview?preview():''}${toast(s)}</div>`;
+}
+
+/* ===================== SETTINGS ===================== */
+const TABS=[['account','ACCOUNT','user'],['identities','IDENTITIES','mail'],['appearance','APPEARANCE','eye'],['keyboard','KEYBOARD','key'],['notifications','NOTIFY','bolt'],['privacy','PRIVACY','lock'],['rules','RULES','gear'],['agents','AGENT_ACTIVITY','agent']];
+const kv=(k,v,a='')=>`<div class="kv"><span class="k">${k}</span><span class="v">${v}</span><span>${a}</span></div>`;
+const sec=(t,b,r='')=>`<div class="ss"><h3>${t}<span class="sp"></span>${r}</h3><div class="kvs">${b}</div></div>`;
+const page=(t,l,b)=>`<div class="sin"><div><h2>${t}</h2><div class="prm mute" style="margin-top:12px">${l.map(x=>`<div>${x}</div>`).join('')}</div></div>${b}</div>`;
+const SET={
+account:()=>page('ACCOUNT',['ICLOUD_LINK: CONNECTED //','CREDENTIALS: AES-256-GCM //','MCP_CLIENTS: NEVER SEE THEM'],
+ sec('ICLOUD',kv('Address','oleg@icloud.com<small>Linked 2026-09-12</small>','<span class="chip inv">CONNECTED</span>')+kv('Password','App-specific · ••••-k3xq','<button class="btn sm">REPLACE</button>')+kv('Mirror','51,902 messages · 38 folders<small>IDLE + CONDSTORE · up to date</small>','<button class="btn sm quiet">RESYNC</button>'))+
+ sec('STORAGE',kv('iCloud quota',`${prog(21,{pc:1,style:'width:320px'})}<small>41.2 of 200 GB · mail uses 6.1 GB</small>`,''))+
+ sec('SESSIONS',kv('This browser','MacBook · Chrome PWA<small>Active now</small>','')+kv('Others','iPad PWA, Firefox','<button class="btn sm">SIGN OUT OTHERS</button>'))+
+ sec('DANGER_ZONE',kv('Unlink iCloud','Removes credentials, mirror and caches.<small>Mail on iCloud is untouched.</small>','<button class="btn sm danger">UNLINK</button>'))),
+identities:()=>page('IDENTITIES',['ALIASES: NOT EXPOSED OVER IMAP //','SUGGESTED FROM DELIVERED-TO //','VERIFIED ON FIRST SEND'],
+ sec('SEND_FROM',kv('oleg@icloud.com','Primary','<span class="chip inv">DEFAULT</span>')+kv('oleg@olegpustovit.com','Custom domain<small>Verified 2026-09-12</small>','')+kv('hme-7fq2@icloud.com','Hide My Email<small>Used with Hearthstay</small>',''),'<button class="btn sm">+ ADD</button>')+
+ sec('SUGGESTED',kv('o.pustovit@icloud.com','41 messages delivered here','<button class="btn sm">ADD</button>'))+
+ sec('REPLIES',kv('Reply from','The address the message was sent to','<span class="tgl on"></span>'))),
+appearance:()=>page('APPEARANCE',['PALETTE: MONOCHROME + GRAPHITE //','SIGNAL: APPLE FLAG COLORS, OPT-IN'],
+ sec('THEME',kv('Mode',`<div style="display:flex;gap:12px">${[['PAPER','#E6E6E1','#4A4A46'],['NIGHT_SHIFT','#0D0D0C','#B4B4AD']].map(([n,b,a],i)=>`<div style="border:${i?'var(--frame)':'2px solid var(--acc)'};width:150px"><div style="height:70px;background:${b};padding:8px;display:grid;gap:5px;align-content:start"><div style="height:8px;background:${a}"></div><div style="height:5px;background:${a};opacity:.4;width:70%"></div><div style="height:5px;background:${a};opacity:.4;width:50%"></div></div><div class="cap" style="padding:6px 8px;font-size:10px">${n}</div></div>`).join('')}</div>`,''))+
+ sec('DISPLAY',kv('Density','<div class="seg"><span>COMPACT</span><span class="on">DEFAULT</span><span>COMFY</span></div>','')+kv('Reading font','<div class="seg"><span class="on">SANS</span><span>MONO</span></div>','')+kv('Signal colors',`<span style="display:flex;gap:8px">${FLC.map(x=>`<span class="flag ${x}" style="width:14px;height:14px"></span>`).join('')}</span>`,'<span class="tgl"></span>')+kv('Motion','<div class="seg"><span class="on">FULL</span><span>REDUCED</span></div><small>Follows the system. Navigation is never animated.</small>',''))),
+keyboard:()=>page('KEYBOARD',['PRESET: GMAIL //','REBIND: CLICK, THEN PRESS KEYS'],
+ sec('PRESET',kv('Layout','<div class="seg"><span class="on">GMAIL</span><span>APPLE_MAIL</span><span>CUSTOM</span></div>',''))+
+ sec('BINDINGS',[['Archive','e'],['Trash','#'],['Move','v'],['Snooze','h'],['Flag','s'],['Command palette','⌘ k'],['Undo','z']].map(([a,k],i)=>kv(a,i===3?'<span class="inp on" style="height:28px;width:160px;font-size:12px">PRESS KEYS<span class="caret"></span></span>':K(...k.split(' ')),'<button class="btn sm quiet">EDIT</button>')).join(''))),
+notifications:()=>page('NOTIFY',['OPEN TABS: SSE //','INSTALLED PWA: WEB PUSH //','BADGE: INBOX UNREAD'],
+ sec('DEVICES',kv('MacBook','Chrome PWA','<span class="tgl on"></span>')+kv('iPad','Safari PWA','<span class="tgl on"></span>'))+
+ sec('WHEN',kv('Notify for','<div class="seg"><span>ALL</span><span class="on">VIP + DIRECT</span><span>NONE</span></div>','')+kv('Quiet hours','22:00–07:30','<span class="tgl on"></span>')+kv('Undo send','<div class="seg"><span>5S</span><span class="on">10S</span><span>20S</span><span>30S</span></div>',''))),
+privacy:()=>page('PRIVACY',['REMOTE_CONTENT: PROXIED //','TRACKERS: STRIPPED //','YOUR_IP: HIDDEN'],
+ sec('REMOTE_CONTENT',kv('Default','<div class="seg"><span class="on">BLOCK</span><span>PROXY</span></div>','')+kv('Allowed senders','14','<button class="btn sm quiet">MANAGE</button>')+kv('Strip tracking params','utm_*, fbclid, mc_eid…','<span class="tgl on"></span>'))+
+ sec('LOCAL_CACHE',kv('This device',`${prog(42,{thin:1,style:'width:240px'})}<small>212 MB · 51,902 headers · 1,830 bodies</small>`,'<button class="btn sm">CLEAR</button>'))),
+rules:()=>page('RULES',['ICLOUD RULES: NOT IN IMAP //','RUN ON SERVER // < 1S AFTER ARRIVAL'],
+ sec('ACTIVE',['<b>LIST-ID</b> = fieldnotes.email → move <b>/_reading</b>, mark read','<b>FROM</b> ends @halcyon.dev AND <b>SUBJECT</b> ~ “passed” → archive','<b>FROM</b> = billing@ledgerline.io → flag green, move <b>/_finance</b>'].map((r,i)=>`<div class="kv" style="grid-template-columns:30px 1fr auto auto"><span class="mute">0${i+1}</span><span class="v">${r}</span><span class="tgl on"></span><button class="btn sm quiet">EDIT</button></div>`).join(''),'<button class="btn sm">+ NEW RULE</button>')+
+ `<div class="ss"><h3>RULE_EDITOR</h3>${W('NEW_RULE.SYS',`<div style="padding:14px;display:grid;gap:12px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="chip inv">IF</span><span class="chip">FROM ▾</span><span class="chip">CONTAINS ▾</span><span class="inp on" style="height:26px;width:200px;box-shadow:none">@kestrel.studio<span class="caret"></span></span></div><div style="display:flex;gap:8px;align-items:center"><span class="chip inv">THEN</span><span class="chip">MOVE TO ▾</span><span class="chip">/_clients/_kestrel</span><span class="chip dash">+ ACTION</span></div><div style="display:flex;gap:10px;align-items:center;border-top:var(--hairline);padding-top:12px"><button class="btn pri sm">SAVE</button><span class="prm mute" style="font-size:11px"><div>DRY_RUN: 37 OF LAST 500 MATCH //</div></span><span class="sp"></span><label class="mono" style="display:flex;gap:6px;align-items:center;font-size:12px"><span class="chk on"></span>Apply to existing</label></div></div>`,{on:1,cls:'pop'})}</div>`),
+agents:()=>page('AGENT_ACTIVITY',['AGENTS: WORK VIA MCP //','APPROVALS: OWNED BY THE AGENT //','HERE: SEE IT, UNDO IT'],
+ sec('CONNECTED_CLIENTS',kv(`${ico('agent')} CLAUDE_DESKTOP`,'Last call 2 min ago<small>Granted 2026-10-02</small>','<button class="btn sm">REVOKE</button>')+kv(`${ico('agent')} CLAUDE_CODE`,'Last call 3 h ago<small>Granted 2026-10-20</small>','<button class="btn sm">REVOKE</button>'),`<span style="text-transform:none;letter-spacing:0">mail.microapps.space/mcp</span>`)+
+ sec('LOG // LIVE',[['09:13','CLAUDE_DESKTOP','labeled “build #4821 failed” → /_ci','UNDO'],['09:02','CLAUDE_DESKTOP','archived 14 newsletters','UNDO'],['08:55','CLAUDE_CODE','read 3 messages in /_clients/_kestrel',''],['08:40','CLAUDE_DESKTOP','sent “Re: draft contract v3” → t.wren@wrenlegal.eu','VIEW'],['YDAY','CLAUDE_DESKTOP','flagged “Invoice INV-20931” green','UNDO']].map(([t,w,x,a])=>`<div class="kv" style="grid-template-columns:56px 1fr auto"><span class="mute">${t}</span><span class="v"><b class="cap" style="font-size:11.5px">${w}</b> ${x}</span>${a?`<button class="btn sm quiet">${a}</button>`:'<span></span>'}</div>`).join(''),'<span class="blocks live"><i></i><i></i><i></i><i></i></span>')),
+};
+
+/* ===================== FULL-PAGE SCREENS ===================== */
+const deco=(o={})=>`<div class="reg h" style="top:${o.y1||170}px"></div><div class="reg h" style="top:${o.y2||730}px"></div><div class="reg v" style="left:${o.x1||96}px"></div><div class="reg v" style="right:${o.x2||96}px"></div><div class="dots" style="position:absolute;left:24px;top:200px;width:48px;height:500px;opacity:.6"></div><div class="dots" style="position:absolute;right:24px;top:200px;width:48px;height:500px;opacity:.6"></div>`;
+const shell=(inner,foot='',o)=>`<div class="scr">${deco(o)}<div class="brand"><span class="sq"></span>TERMINAL_MAIL</div>${inner}<div class="foot"><span>mail.microapps.space</span><span>${foot}</span></div></div>`;
+function hero(h,lines,x=150,y=210,w=640){return `<div class="crop" style="position:absolute;left:${x}px;top:${y}px;width:${w}px;padding:34px 36px"><h1 class="hl">${h}</h1><div class="prm big">${lines.map(l=>`<div>${l}</div>`).join('')}</div></div>`}
+function authScreen(mode){
+  const M={signin:['SYSTEM_STATUS: LOCKED',['IDENTITY: REQUIRED //','MAILBOX: ENCRYPTED //','AGENTS: STANDING_BY'],'AUTH.SYS',[['Email','oleg@olegpustovit.com'],['Password','••••••••••••']],'SIGN_IN','<a class="link">REGISTER</a><a class="link">FORGOT</a>'],
+   register:['NEW_OPERATOR: ENROLL',['INVITE_ONLY_DOMAINS //','VERIFICATION: EMAIL //','PASSWORD: SCRYPT'],'REGISTER.SYS',[['Email','oleg@olegpustovit.com'],['Password · 12+','••••••••••••••']],'CREATE_ACCOUNT','<a class="link">SIGN IN INSTEAD</a><span></span>'],
+   verify:['LINK_SENT: CHECK_INBOX',['TO: oleg@olegpustovit.com //','EXPIRES: 30 MIN //','SINGLE_USE: TRUE'],'VERIFY.SYS',[],'RESEND_LINK','<a class="link">DIFFERENT EMAIL</a><span></span>'],
+   reset:['CREDENTIAL_RESET',['ALL_SESSIONS: REVOKED //','MCP_TOKENS: REVOKED //','ICLOUD_LINK: KEPT'],'RESET.SYS',[['New password','••••••••••••••']],'SET_PASSWORD','<a class="link">BACK TO SIGN IN</a><span></span>']};
+  const [h,l,wn,f,cta,alt]=M[mode];
+  return shell(hero(h,l)+`<div style="position:absolute;right:150px;top:250px;width:420px">${W(wn,`<div style="padding:22px;display:grid;gap:16px">${f.map(([lb,v],i)=>`<label><span class="lbl">${lb}</span><div class="inp ${i===f.length-1?'on':''}">${v}${i===f.length-1?'<span class="caret"></span>':''}</div></label>`).join('')}${mode==='verify'?`<div class="dots" style="height:110px;border:var(--frame);display:grid;place-items:center;font-size:44px">${ico('mail')}</div>`:''}<button class="btn pri lg wide" style="justify-content:center">${cta} ${K('↵')}</button><div style="display:flex;justify-content:space-between">${alt}</div></div>`,{on:1,cls:'pop'})}</div>`);
+}
+function connectScreen(err){
+  return shell(hero('LINK_ICLOUD',['OPEN account.apple.com //','SIGN-IN & SECURITY → APP PASSWORDS //','+ NAME IT “TERMINAL_MAIL” //','PASTE THE 16-CHAR CODE →'],120,200,640)+
+  `<div style="position:absolute;right:150px;top:200px;width:430px;display:grid;gap:18px">${W('LINK_ICLOUD.SYS // STEP 2 OF 3',`<div style="padding:22px;display:grid;gap:16px"><label><span class="lbl">iCloud address</span><div class="inp">oleg@icloud.com</div></label><label><span class="lbl">App-specific password</span><div class="inp on ${err?'err':''}">abcd-efgh-ijkl-mnop<span class="caret"></span></div></label>${err?`<div class="prm" style="font-size:11px"><div>IMAP: LOGIN REJECTED //</div><div>LOOKS LIKE YOUR APPLE ID PASSWORD //</div></div>`:''}<button class="btn pri lg wide" style="justify-content:center">${err?'RETRY':'TEST_AND_LINK'} ${K('↵')}</button></div>`,{on:1,cls:'pop'})}
+  <div style="width:280px;margin-left:auto">${warnWin('',err?'LOGIN: REJECTED':'NEVER USE YOUR<br>APPLE ID PASSWORD',err?'USE AN APP-SPECIFIC ONE':'ENCRYPTED // REVOCABLE')}</div></div>`,'STEP 2 OF 3');
+}
+function syncScreen(p){
+  const fs=[['/_inbox',100,'2,104'],['/_sent',100,'1,830'],['/_drafts',100,'12'],['/_archive',p,'41,208'],['/_clients/_kestrel',0,'612'],['/_receipts',0,'5,920']];
+  return shell(hero('SYSTEM_STATUS: SYNCING<br>INBOX_READY',['IMAP_LINK: ESTABLISHED //','IDLE: LISTENING //','HISTORY: BACKFILL IN BACKGROUND'],120,170,700)+
+  `<div style="position:absolute;left:156px;top:560px;width:620px;display:grid;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="cap" style="display:flex;gap:8px;align-items:center;background:var(--acc);color:var(--acc-ink);padding:4px 7px">${ico('warn')} HEADER_IMPORT_PROGRESS_...</span><b class="mono" style="font-size:20px">${p}%</b></div>${prog(p,{style:'height:34px'})}<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span class="cap mute">8,412 / 51,902 HEADERS · 1,140/S · BODIES ON DEMAND</span><button class="btn pri">ENTER_INBOX ${K('↵')}</button></div></div>
+  <div style="position:absolute;right:130px;top:200px;width:420px">${W('LOG_VIEWER // IMPORT',`<div style="padding:8px 0">${fs.map(([n,v,c])=>`<div style="display:grid;grid-template-columns:1fr 110px 40px;gap:10px;align-items:center;padding:7px 12px;font:400 12.5px var(--f-mono)"><span style="display:flex;gap:6px;align-items:center">${ico(v===100?'check':'folder')} ${n} <span class="mute">${c}</span></span>${prog(v,{thin:1})}<span style="text-align:right">${v}%</span></div>`).join('')}</div>`,{on:1})}</div>
+  <div class="bin" style="position:absolute;right:130px;top:520px;width:420px">0111110000100001001010011 0120101N1101110001001 01100111 0101 10100110 0110 1001 0101110 0100 0011 01110110011 0100101 1100110 0101001 10 1001101 0100 110 0101</div>`,'STEP 3 OF 3');
+}
+function pwaScreen(){
+  return shell(`<div style="position:absolute;left:150px;top:190px;width:500px">${W('INSTALL_APP // BROWSER_PROMPT',`<div style="display:grid;grid-template-columns:130px 1fr;gap:20px;padding:22px"><div style="width:120px;height:120px;background:var(--acc);color:var(--acc-ink);display:grid;place-items:center;box-shadow:5px 5px 0 var(--line);font:400 22px/1 var(--f-display);text-align:center">T_M</div><div style="display:grid;gap:12px;align-content:start"><div class="disp" style="font-size:22px">INSTALL TERMINAL_MAIL?</div><div class="prm" style="font-size:11.5px"><div>OWN WINDOW //</div><div>OFFLINE READ + COMPOSE //</div><div>PUSH + DOCK BADGE //</div><div>MAILTO: HANDLER</div></div><div style="display:flex;gap:8px"><button class="btn pri">INSTALL ${K('↵')}</button><button class="btn quiet">NOT NOW</button></div></div></div>`,{on:1,cls:'pop'})}</div>
+  <div style="position:absolute;right:150px;top:190px;width:400px;display:grid;gap:18px">${W('NOTIFICATION // MAIL',`<div style="display:grid;grid-template-columns:36px 1fr;gap:12px;padding:12px"><div class="av lg me">TM</div><div><div class="mono" style="font-weight:700;font-size:13px">Mira Okafor · VIP</div><div class="mono" style="font-size:12.5px">Q4 launch review: notes + open questions</div><div style="display:flex;gap:10px;margin-top:8px"><a class="link">ARCHIVE</a><a class="link">REPLY</a><a class="link">READ</a></div></div></div>`,{cls:'pop'})}
+  ${W('DOCK // BADGE + MAILTO',`<div style="display:flex;gap:18px;align-items:center;padding:14px"><div style="position:relative;width:56px;height:56px;background:var(--acc);color:var(--acc-ink);display:grid;place-items:center;font:400 13px var(--f-display)">T_M<span style="position:absolute;right:-9px;top:-9px;background:var(--paper-3);color:var(--ink);border:var(--frame);font:700 11px var(--f-mono);padding:1px 5px">6</span></div><div class="prm" style="font-size:11px"><div>BADGE = INBOX UNREAD //</div><div>MAILTO: → COMPOSE</div></div></div>`)}</div>`);
+}
+
+/* ===================== MOBILE ===================== */
+const tabbar=on=>`<nav class="tabbar">${[['inbox','MAIL'],['clock','SNOOZED'],['search','SEARCH'],['gear','SETTINGS']].map(([i,l],k)=>`<span class="${k===on?'on':''}"><span style="font-size:15px">${ico(i)}</span>${l}</span>`).join('')}</nav>`;
+function mobList(){const s=S({cur:-1});const v=visible(s);
+  return `<div class="mob">${W('INBOX // 4 UNREAD',`<div class="ph"><div class="seg"><span class="on">ALL</span><span>UNREAD</span><span>FLAGGED</span></div><span class="sp"></span><span class="ib">${ico('search')}</span></div><div class="rows"><div class="day">Today</div><div class="swipe"><div class="under">${ico('archive')} ARCHIVE</div>${row(v[0],s,0)}</div>${v.slice(1,8).map((m,i)=>row(m,s,i+1)).join('')}</div>`,{on:1,bstyle:'display:flex;flex-direction:column;overflow:hidden'})}<div class="fab">${ico('draft')}</div>${tabbar(0)}</div>`}
+function mobRead(){const m=MSGS[0];
+  return `<div class="mob">${W('MESSAGE // 1 OF 14',`<div class="ph" style="gap:2px"><span class="tk">← INBOX</span><span class="sp"></span>${['archive','clock','flag','trash'].map(i=>`<span class="ib">${ico(i)}</span>`).join('')}</div><div class="rc"><div style="padding:14px 14px 90px"><div class="rhead crop" style="padding:14px"><h1 class="subj" style="font-size:18px">${m.subj}</h1><div class="prm" style="font-size:10.5px"><div>4 MESSAGES // FLAG: RED //</div></div></div><div class="more" style="padding-left:0">3 EARLIER MESSAGES</div><div class="tm e"><div class="h"><span class="av">MO</span><div><div class="w">Mira Okafor</div><div class="a">09:41 → me</div></div><span></span></div><div class="body" style="padding-left:0"><p>Hi Oleg,</p><p>Pulled together the notes from Tuesday. Three things block the ship date, and only one of them is ours.</p></div></div></div></div><div class="qr" style="left:10px;right:10px;bottom:12px">${ico('reply')} &gt;&gt; REPLY_TO_MIRA<span class="caret" style="height:12px;width:6px"></span></div>`,{on:1,bstyle:'display:flex;flex-direction:column;overflow:hidden'})}<div style="height:30px"></div></div>`}
+function mobCompose(off){
+  return `<div class="mob">${W('NEW_MESSAGE',`<div class="cf"><span class="l">To</span><span class="chip">Mira Okafor</span></div><div class="cf"><span class="l">Subject</span><b>P0 estimate holds</b></div><div class="cbody"><p>Mira, confirmed: one week, Nov 18 holds<span class="caret"></span></p><div class="sig">— Oleg</div></div>${off?`<div class="lnote" style="border-top:var(--hairline)">${ico('wifi')} OFFLINE // QUEUED IN OUTBOX //</div>`:''}<div class="cft"><button class="btn pri">SEND</button><span class="ib">${ico('clip')}</span><span class="ib">${ico('clock')}</span></div>`,{on:1,bstyle:'display:flex;flex-direction:column'})}<div style="height:30px"></div></div>`}
+function mobOffline(){const s=S({cur:-1});const v=visible(s);
+  return `<div class="mob">${W('INBOX // OFFLINE',`<div class="lnote">${ico('wifi')} LINK: DOWN // 3 TX + 1 SEND QUEUED //</div><div class="rows">${v.slice(2,9).map((m,i)=>row(m,s,i)).join('')}</div>`,{on:1,bstyle:'display:flex;flex-direction:column;overflow:hidden'})}${tabbar(0)}</div>`}
+
+/* ===================== REGISTRY ===================== */
+const D='d',P='p';
+const SCREENS=[
+ ['A','Access + onboarding'],
+ ['A.1','AUTH // SIGN_IN',D,()=>authScreen('signin'),'The headline and prompts sit inside crop marks with the form in its own window. Registration lines and dot columns frame the page; nothing overlaps the form.'],
+ ['A.2','AUTH // REGISTER',D,()=>authScreen('register'),'The prompt lines state the rules (invite-only, email verification) before you type.'],
+ ['A.3','AUTH // VERIFY',D,()=>authScreen('verify'),'Expiry and single-use are stated up front.'],
+ ['A.4','AUTH // RESET',D,()=>authScreen('reset'),'The prompts say what gets revoked before you commit.'],
+ ['A.5','ONBOARD // LINK_ICLOUD',D,()=>connectScreen(false),'The how-to steps are the prompt lines. The WARNING window carries the one rule that matters.'],
+ ['A.6','ONBOARD // LINK_ICLOUD // REJECTED',D,()=>connectScreen(true),'The warning window switches to the failure and its fix.'],
+ ['A.7','ONBOARD // INITIAL_SYNC',D,()=>syncScreen(13),'The barcode progress bar is the hero. LOG_VIEWER shows per-folder import, and the inbox can be entered at any time.'],
+ ['B','Core mail'],
+ ['B.1','MAIL // INBOX',D,()=>renderApp(S({hover:2})),'Three tiled windows. The active window shows a graphite title, the folder tree uses /_ paths, and the storage bar is a barcode. Row 3 shows hover actions.'],
+ ['B.2','MAIL // CONVERSATION',D,()=>renderApp(S({focus:'reader'})),'Crop marks frame the subject: the single focal point. Metadata reads as one >> prompt line.'],
+ ['B.3','MAIL // THREAD + INLINE_REPLY',D,()=>renderApp(S({focus:'reader',expanded:true,reply:true})),'The reply becomes a small docked window and autosaves to iCloud Drafts.'],
+ ['B.4','MAIL // NEWSLETTER',D,()=>renderApp(S({cur:3})),'Unsubscribe and remote-content notices are one terminal line each, with [bracket] actions.'],
+ ['B.5','MAIL // FILTER: UNREAD',D,()=>renderApp(S({filter:'unread'})),'The filter is a local query, so results are instant.'],
+ ['B.6','MAIL // BULK_SELECT + DRAG',D,()=>renderApp(S({picked:[1,3,4,6],cur:3,drop:1,ghost:1})),'Picked rows get a ltGray pattern gutter. Dragging onto a folder shows marching ants, the original Mac selection marquee.'],
+ ['B.7','MAIL // SNOOZED',D,()=>renderApp(S({folder:'snoozed'})),'Grouped by return time. Uses an iCloud “Snoozed” folder.'],
+ ['B.8','MAIL // DRAFTS',D,()=>renderApp(S({folder:'drafts'})),'Synced both ways with iCloud Drafts.'],
+ ['B.9','MAIL // INBOX_ZERO',D,()=>renderApp(S({zero:true})),'A status window on the dot field.'],
+ ['B.10','MAIL // READER_MAXIMIZED (▣)',D,()=>renderApp(S({max:true,focus:'reader'})),'▣ maximizes the reader. The other windows collapse into graphite spines with rotated titles and dot-matrix unread counts, like the black strips in the reference. Click a spine to restore it.'],
+ ['B.11','MAIL // SIDEBAR_COLLAPSED (▢)',D,()=>renderApp(S({side:false})),'▢ on MAILBOXES.SYS folds it into a spine and gives the list more width.'],
+ ['B.12','MAIL // SYNC_PENDING',D,()=>renderApp(S({pending:2,syncId:48215})),'With optimistic changes in flight, the status bar shows the Mac watch cursor and a dot-matrix pending count.'],
+ ['C','Overlays'],
+ ['C.1','OVERLAY // COMMAND_PALETTE',D,()=>renderApp(S({overlay:'palette'})),'Every action with its key.'],
+ ['C.2','OVERLAY // SEARCH',D,()=>renderApp(S({search:'from:mira has:attachment launch'})),'Operators become chips in the list window and matches are highlighted in graphite.'],
+ ['C.3','OVERLAY // MOVE_TO',D,()=>renderApp(S({overlay:'move',pickI:1})),'Fuzzy /_path match with number keys.'],
+ ['C.4','OVERLAY // SNOOZE_UNTIL',D,()=>renderApp(S({overlay:'snooze',pickI:1})),''],
+ ['C.5','OVERLAY // FLAG_COLOR',D,()=>renderApp(S({overlay:'flag'})),'Pattern-coded and synced to Apple Mail.'],
+ ['C.6','OVERLAY // KEYMAP',D,()=>renderApp(S({overlay:'help'})),''],
+ ['C.7','OVERLAY // PREVIEW',D,()=>renderApp(S({preview:true})),''],
+ ['C.8','STATUS // UNDO',D,()=>renderApp(S({cur:1,toast:{icon:'archive',text:'ARCHIVED 1 CONVERSATION',undo:1,cd:1}})),'A small status window. The text types on and a dithered bar drains as the undo countdown.'],
+ ['D','Compose'],
+ ['D.1','COMPOSE // FLOATING',D,()=>renderApp(S({compose:'float'})),'The list stays usable behind it. Shows aliases and autocompletes from mail history.'],
+ ['D.2','COMPOSE // FULLSCREEN',D,()=>renderApp(S({compose:'full'})),''],
+ ['D.3','COMPOSE // MINIMIZED',D,()=>renderApp(S({minis:['P0_ESTIMATE_HOLDS','RE: CONTRACT_V3']})),'Esc minimizes and never discards.'],
+ ['D.4','COMPOSE // UNDO_SEND',D,()=>renderApp(S({toast:{title:'OUTBOX',icon:'send',text:'SENDING IN 10S',undo:1,cd:1}})),'The server outbox holds it, so closing the tab is safe.'],
+ ['E','Alongside agents'],
+ ['E.1','AGENT // CHANGE_ARRIVES',D,()=>renderApp(S({cur:1,toast:{title:'AGENT',icon:'agent',text:'CLAUDE_DESKTOP ARCHIVED 14',undo:1}})),'MCP changes stream in, attributed and undoable. Nothing waits on you.'],
+ ['E.2','AGENT // SENT_BY_AGENT',D,()=>renderApp(S({folder:'sent',focus:'reader'})),'Agent sends are ordinary Sent mail, marked SENT_BY.'],
+ ['F','Settings'],
+ ...TABS.map(([k,l],i)=>[`F.${i+1}`,`SETTINGS // ${l}`,D,()=>renderApp(S({view:'settings',tab:k})),'']),
+ ['G','System states'],
+ ['G.1','STATE // OFFLINE',D,()=>renderApp(S({offline:true,pending:3})),'A WARNING window plus the status bar. Everything stays usable.'],
+ ['G.2','STATE // ICLOUD_AUTH_FAILED',D,()=>renderApp(S({authErr:true})),'The reference’s WARNING window, used for the one failure that needs action.'],
+ ['G.3','PWA // INSTALL + PUSH + BADGE',D,()=>pwaScreen(),''],
+ ['H','Phone PWA'],
+ ['H.1','MOBILE // INBOX',P,()=>mobList(),''],
+ ['H.2','MOBILE // MESSAGE',P,()=>mobRead(),''],
+ ['H.3','MOBILE // COMPOSE',P,()=>mobCompose(false),''],
+ ['H.4','MOBILE // OFFLINE',P,()=>mobOffline(),''],
+];
+const phoneOn=(fn)=>()=>`<div class="scr dots" style="display:grid;place-items:center"><div style="border:var(--frame);box-shadow:6px 6px 0 var(--line)">${fn()}</div></div>`;
+const FLOWS=[
+ ['FIRST_RUN',[['Sign in',()=>authScreen('signin')],['Link iCloud',()=>connectScreen(false)],['Wrong password',()=>connectScreen(true)],['Inbox ready in ~2s',()=>syncScreen(13)],['Inbox',()=>renderApp(S())]]],
+ ['TRIAGE // NO MOUSE',[['j: next row',()=>renderApp(S({cur:1}))],['e: archive, next row already focused',()=>renderApp(S({cur:1,toast:{icon:'archive',text:'ARCHIVED 1 CONVERSATION',undo:1,cd:1}}))],['h: snooze',()=>renderApp(S({cur:1,overlay:'snooze',pickI:3}))],['v: move',()=>renderApp(S({cur:1,overlay:'move',pickI:1}))],['Inbox zero',()=>renderApp(S({zero:true}))]]],
+ ['REPLY + UNDO_SEND',[['Open thread',()=>renderApp(S({focus:'reader'}))],['r: reply in place',()=>renderApp(S({focus:'reader',reply:true}))],['⌘↵: 10s undo',()=>renderApp(S({focus:'reader',toast:{title:'OUTBOX',icon:'send',text:'SENDING IN 10S',undo:1,cd:1}}))],['Filed in iCloud Sent',()=>renderApp(S({folder:'sent',toast:{icon:'check',text:'SENT // SAVED TO SENT'}}))]]],
+ ['SEARCH',[['/: search in the list',()=>renderApp(S({overlay:'search',q:'from:mira'}))],['Operators become chips',()=>renderApp(S({search:'from:mira has:attachment launch'}))],['Open a result',()=>renderApp(S({search:'from:mira has:attachment launch',focus:'reader'}))]]],
+ ['AGENT_TIDIES_WHILE_YOU_WORK',[['You’re reading',()=>renderApp(S({focus:'reader'}))],['Agent archives via MCP, live',()=>renderApp(S({cur:1,toast:{title:'AGENT',icon:'agent',text:'CLAUDE_DESKTOP ARCHIVED 14',undo:1}}))],['Review or undo in the log',()=>renderApp(S({view:'settings',tab:'agents'}))]]],
+ ['OFFLINE → BACK',[['Changes queue',()=>renderApp(S({offline:true,pending:3}))],['Phone: send queued',phoneOn(()=>mobCompose(true))],['Reconnected, queue replays',()=>renderApp(S({toast:{icon:'check',text:'LINK: UP // 3 TX CONFIRMED'}}))]]],
+ ['RULE_FROM_MESSAGE',[['⌘K: rule',()=>renderApp(S({overlay:'palette'}))],['Editor + dry run',()=>renderApp(S({view:'settings',tab:'rules'}))],['Saved',()=>renderApp(S({view:'settings',tab:'rules',toast:{icon:'check',text:'RULE SAVED // 37 MOVED',undo:1}}))]]],
+];
+
+/* ===================== DOC BUILD ===================== */
+const $=s=>document.querySelector(s);
+document.querySelectorAll('[data-ctl]').forEach(e=>e.outerHTML=CTL());
+$('#top').innerHTML=`<div class="reg h" style="top:118px"></div><div class="reg h" style="top:560px"></div><div class="reg v" style="left:30px"></div><div class="reg v" style="right:300px"></div>
+ <div class="dots" style="position:absolute;left:0;top:140px;width:24px;height:400px;opacity:.6"></div>
+ <div class="crop" style="position:absolute;left:56px;top:150px;right:330px;padding:30px 34px">
+  <div class="cap mute" style="margin-bottom:16px">DESIGN_SPEC R3 // TERMINAL_MAIL // 2026-10-28 // COMPANION TO PROPOSAL.md</div>
+  <h1 class="disp" style="font-size:clamp(30px,4.4vw,58px);margin:0 0 22px">SYSTEM_STATUS: MAIL_ONLINE<br>HUMANS_WELCOME</h1>
+  <div class="prm big"><div>ICLOUD_IMAP: MIRRORED //</div><div>LATENCY_BUDGET: 16MS //</div><div>MOUSE: OPTIONAL //</div><div>AGENTS: SAME_PIPE, OWN_APPROVALS</div></div>
+  <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap"><a class="btn pri lg" href="#live" style="text-decoration:none">&gt;&gt; OPEN LIVE PROTOTYPE</a><a class="btn lg" href="#screens" style="text-decoration:none">ALL SCREENS</a></div></div>
+ <div class="side" style="position:absolute;right:0;top:0;width:280px;display:grid;gap:14px">
+  ${W('PROGRESS BAR',`<div style="padding:10px;display:grid;gap:6px">${prog(13,{pc:1})}<div class="cap" style="font-size:10px">IMAP_IMPORT_PROGRESS_...</div></div>`)}
+  ${warnWin('','WARNING: INBOX_OVERLOAD','ZERO_PENDING POSSIBLE')}
+  ${W('CONTROL_PANEL',`<div style="padding:10px;display:grid;gap:10px"><div class="ramp" style="height:30px"><i style="background:var(--ramp-1)"></i><i style="background:var(--ramp-2)"></i><i style="background:var(--ramp-3)"></i><i style="background:var(--ramp-4)"></i><i style="background:var(--ramp-5)"></i><i style="background:var(--ramp-6)"></i></div><div style="background:var(--acc);color:var(--acc-ink);padding:8px 10px;font:400 18px/1.1 var(--f-display)">! KEYBOARD<br>FIRST</div></div>`)}
+ </div>
+ <div class="vtxt mute" style="position:absolute;right:296px;top:150px;transform:translateX(100%)">DATA_01 // MIRROR // SSE</div>
+ <div class="bin" style="position:absolute;left:56px;top:585px;width:600px">0111110000100001001010011 0120101N1101110001001 01100111 0101 10100110 0110 1001 0101110 0100 0011</div>`;
+$('#toc').innerHTML=[['top','/system/',0],['rev','R3 signature_map'],['refs','REF reference_board'],['principles','00 principles'],['tokens','01 tokens'],['components','02 components'],['motion','03 motion'],['live','04 live_prototype'],['screens','05 screens'],...SCREENS.filter(x=>x.length===2).map(x=>['g-'+x[0],'/_'+x[0].toLowerCase()+' '+x[1].toLowerCase(),1]),['flows','06 flows'],['keys','07 keymap'],['sync','08 sync_states']].map(([id,l,sub],i,a)=>`<a href="#${id}" class="${sub?'sub':''}">${i?`<span class="br">${i===a.length-1?'└':'├'}</span>`:''}${ico('folder')}<span>${l}</span></a>`).join('');
+$('#sigmap').innerHTML=`<tr><th>Signature (from reference)</th><th>Lives in</th><th>Job</th></tr>`+[
+ ['Window + ▢▣✕ title bar','Every pane and floating surface','Defines a region. The controls work: collapse sidebar, maximize reader, close.'],
+ ['Graphite title / fill','The one active window, focused row, primary button','Shows where the keyboard is. One per screen.'],
+ ['SNAKE_CASE caps','Titles, labels, status, buttons','The machine’s voice. Mail content (names, subjects, bodies) stays in natural case.'],
+ ['>> prompt // lines','Status bar, message metadata, auth/onboarding copy, settings intros','Turns metadata into a single readable line instead of a row of chips.'],
+ ['Crop marks','One focal point per screen: subject block, auth headline','Says “this is the thing.”'],
+ ['/_path tree with ├ └','Folder sidebar, settings nav, this TOC','Real hierarchy, drawn the reference way.'],
+ ['Barcode progress + %','Sync, storage, cache, undo countdown','Shows quantity. Never decoration.'],
+ ['WARNING window + triangle','Blocking errors and the one onboarding rule','Reserved for things that need action, so it keeps its force.'],
+ ['Dot grid columns','Empty space: sidebar fill, empty states, page margins','Texture where there is no content, never behind text.'],
+ ['Registration lines, binary, vertical text','Full-page screens and the hero only','Atmosphere at the edges of the page, kept out of working views.'],
+ ['Gray ramp','Theme preview, data density','CONTROL_PANEL swatches, used as a real control.'],
+].map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('');
+
+const REFS=[
+ ['REF_00 // THE_IMAGE','Xerox system poster',`<div class="crop" style="padding:14px 16px;background:var(--paper)"><div class="disp" style="font-size:18px">SYSTEM_STATUS:<br>ISOLATED</div><div class="prm" style="font-size:10px;margin-top:8px"><div>CORE_SYSTEMS_ACTIVE //</div></div><div style="margin-top:8px">${prog(13,{thin:1})}</div></div>`,['WINDOW + ▢▣✕ CHROME','SNAKE_CASE + >> PROMPTS','CROP MARKS · BARCODE % · WARNING WINDOW','DOT COLUMNS · GRAY RAMP · BLACK STRIPS → SPINES'],'Provided screenshot',''],
+ ['REF_01 // MAC_HIG TITLE BARS','Racing stripes mark the active window',`<div style="display:grid;gap:8px">${W('ACTIVE.WIN','',{on:1,noctl:1})}${W('INACTIVE.WIN','',{noctl:1})}</div>`,['STRIPES ONLY ON THE ACTIVE TITLE','INACTIVE TITLES GO PLAIN','ONE ACTIVE WINDOW AT A TIME'],'system.css (Apple HIG title bars)','https://git.32bit.cafe/zepp/alternate.thiscat.rocks/raw/branch/main/system-css/index.html.ejs'],
+ ['REF_02 // QUICKDRAW PAT#','System 1.0 8×8 fill patterns',`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">${['gray','ltgray','dkgray','diag'].map(x=>`<div style="height:46px;border:var(--frame);background:var(--pat-${x})"></div>`).join('')}<div style="height:46px;border:var(--frame);background:repeating-linear-gradient(to bottom,var(--ink) 0 1px,transparent 1px 3px)"></div></div><div class="cap mute" style="font-size:9.5px;margin-top:6px">GRAY · LTGRAY · DKGRAY · DIAG · STRIPE</div>`,['--PAT-* TOKENS','PICKED-ROW GUTTER, SCROLL THUMB, PROGRESS EDGE','FILE PREVIEWS · NEVER BEHIND TEXT'],'Classic 8×8 Mac patterns · Apple QuickDraw docs','https://www.pauladamsmith.com/blog/2025/09/classic-mac-patterns.html'],
+ ['REF_03 // SUSAN KARE BITMAPS','1-bit, fixed grid, no antialiasing',`<div style="display:flex;gap:14px;align-items:center">${['mail','archive','warn','agent'].map(k=>`<span style="font-size:44px;background:linear-gradient(var(--hair) 1px,transparent 1px) 0 0/4.9px 4.9px,linear-gradient(90deg,var(--hair) 1px,transparent 1px) 0 0/4.9px 4.9px">${ico(k)}</span>`).join('')}</div>`,['9×9 ICON GRID, CRISPEDGES','NO STROKES, NO AA, NO ICON FONT','ONE BITMAP SET FOR APP + DOCS'],'Susan Kare, original Mac icon design','https://www.mindstudio.ai/blog/susan-kare-original-mac-icon-design/'],
+ ['REF_04 // DOT-MATRIX NUMERALS','Doto: a 6×10 matrix, open source',`<div class="dm" style="font-size:54px;line-height:1">1,284</div><div class="dm" style="font-size:22px;color:var(--mute)">13% · 03/14</div>`,['COUNTS, PERCENTAGES, POSITIONS, SYNC_ID','ONLY NUMBERS; WORDS STAY IN SILKSCREEN/PLEX','A HARDWARE-READOUT FEEL WITHOUT PROPRIETARY FONTS'],'Google Fonts: Doto','https://fonts.google.com/specimen/Doto/about'],
+ ['REF_05 // MACPAINT IDIOMS','Marching ants and the watch cursor',`<div style="display:flex;gap:18px;align-items:center"><div class="ants" style="width:150px;height:46px;display:grid;place-items:center" ><span class="cap">/_KESTREL</span></div><span style="font-size:40px">${ico('watch')}</span></div>`,['MARCHING ANTS = DROP TARGET / RANGE','WATCH = OPTIMISTIC TX IN FLIGHT','BOTH 1-BIT, BOTH ANIMATED IN STEPS'],'Classic Mac OS conventions',''],
+ ['REF_06 // RETRO KITS: DON’T COPY','Win95 bevels, navy, teal desktop',`<div style="display:flex;gap:10px;align-items:center"><div style="width:110px;height:46px;background:#c0c0c0;border:2px outset #fff;display:grid;place-items:center;font:11px var(--f-mono);color:#000">BEVEL</div><span class="cap" style="font-size:20px">✕</span><div style="width:110px;height:46px;border:var(--frame);background:var(--paper-3);box-shadow:3px 3px 0 var(--line);display:grid;place-items:center" class="cap">FLAT + HARD</div></div>`,['NO 3D BEVELS, GRADIENTS OR TEAL','FLAT PRINT: 1.5PX FRAME + HARD SHADOW','REFERENCE IS PAPER, NOT PLASTIC'],'Chicago 95 kit · retro-computing trend','https://uiverse.io/design/systems/plastic-fly-44-2a81bc35'],
+];
+$('#refboard').innerHTML=REFS.map(([t,sub,spec,took,src,url])=>W(t,`<div style="padding:14px;border-bottom:var(--hairline);min-height:120px;display:grid;align-content:center" class="dots">${spec}</div><div style="padding:12px 14px;display:grid;gap:8px"><div class="mono" style="font-weight:600;font-size:12.5px">${sub}</div><div class="prm" style="font-size:10.5px">${took.map(x=>`<div>TOOK: ${x}</div>`).join('')}</div><div class="cap mute" style="font-size:9.5px">SRC: ${url?`<a href="${url}" target="_blank" rel="noopener" style="color:inherit">${src}</a>`:src}</div></div>`)).join('');
+$('#princ').innerHTML=[
+ ['Local first','Every read comes from the browser replica. The network only confirms. A keypress that waits on a socket is a bug.'],
+ ['Instant navigation','j/k, focus and folder switches take 0ms of animation. Motion is spent on change.'],
+ ['Signature, rationed','Every reference element has one job and one place (see R3). Loud at the edges, calm where you read.'],
+ ['One graphite focus','Exactly one window title and one row are graphite: wherever the keyboard is.'],
+ ['Keys on the surface','Toolbar actions show their key. ⌘K lists everything. ? shows the full map.'],
+ ['Complementary to agents','A complete mail client. Agents act through MCP and own their approvals. Here you see their changes live and can undo them.'],
+].map(([b,p],i)=>W('PRINCIPLE_0'+(i+1),`<span class="n">0${i+1}</span><b>${b}</b><p>${p}</p>`)).join('');
+$('#swatches').innerHTML=[['--acc','#4A4A46 / #B4B4AD','Accent: focus, primary, active title'],['--ink','#141413 / #E6E6E0','Text, flag patterns'],['--line','#2E2E2C / #8A8A84','Window frames'],['--paper','#E6E6E1 / #0D0D0C','Desktop behind windows'],['--paper-2','#F3F3EF / #151514','Window body'],['--paper-3','#FCFCFA / #1C1C1B','Inputs, files'],['--mute','#6A6A65 / #8C8C85','Secondary text'],['--hair','#D0D0C9 / #2C2C29','Row dividers']].map(([n,v,u])=>W(n,`<div style="height:56px;background:var(${n});border-bottom:var(--frame)"></div><div class="mono" style="padding:8px 10px;font-size:11.5px;line-height:1.5">${v}<br><span class="mute">${u}</span></div>`,{noctl:1})).join('');
+$('#type').innerHTML=[['DISPLAY · Silkscreen<br>15 / 30 / 52 / 58','<span class="disp" style="font-size:38px">SYSTEM_STATUS: ISOLATED</span>'],['CHROME · Plex Mono 500 caps<br>10.5–12 / +.05em','<span class="cap" style="font-size:12px">LOG_VIEWER // MAILBOXES.SYS // 1,284 MSG</span>'],['PROMPT · Plex Mono 500 caps<br>12–17 / 1.6','<div class="prm big"><div>CORE_SYSTEMS_ACTIVE //</div><div>INTERACTION: ACCEPTED</div></div>'],['DATA · Plex Mono 400–700<br>12.5–13','<span class="mono" style="font-size:13px"><b>Mira Okafor</b> [4] · 09:41 · mira@kestrel.studio</span>'],['SUBJECT · Plex Mono 600<br>23 / 1.25','<span class="mono" style="font-size:23px;font-weight:600">Q4 launch review: notes + open questions</span>'],['READING · Plex Sans 400<br>15 / 1.65 · 68ch','<span style="font-size:15px;line-height:1.65">Mail is long-form reading, so it gets a humanist sans. The chrome is a machine, so it speaks in mono caps.</span>']].map(([m,s])=>`<div class="typ"><div class="m">${m}</div><div>${s}</div></div>`).join('');
+$('#flags').innerHTML=FLC.map(x=>`<span class="cap" style="display:flex;gap:6px;align-items:center"><span class="flag ${x}" style="width:16px;height:16px"></span>${x}</span>`).join('');
+$('#flags2').innerHTML=$('#flags').innerHTML;
+$('#icons').innerHTML=Object.keys(BM).map(k=>`<div style="display:grid;justify-items:center;gap:6px;width:62px"><span style="font-size:24px">${ico(k)}</span><span class="cap" style="font-size:9px">${k}</span></div>`).join('');
+const comp=(t,b,o={})=>W(t,`<div class="spec">${b}</div>`,o);
+$('#comps').innerHTML=[
+ comp('WINDOW // INACTIVE',`<div class="prm" style="font-size:11px"><div>TITLE: MONO CAPS //</div><div>CONTROLS: ▢ COLLAPSE ▣ MAXIMIZE ✕ CLOSE //</div><div>BODY: SCROLLS ALONE</div></div>`),
+ comp('WINDOW // ACTIVE',`<div class="prm" style="font-size:11px"><div>TITLE: GRAPHITE //</div><div>ONE AT A TIME //</div><div>TAB CYCLES</div></div>`,{on:1,cls:'pop'}),
+ comp('BUTTONS',`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri">SEND ${K('⌘','↵')}</button><button class="btn">EDIT</button><button class="btn quiet">CANCEL</button><button class="btn danger">UNLINK</button></div><div style="display:flex;flex-wrap:wrap">${[['e','ARCHIVE'],['h','SNOOZE'],['#','TRASH']].map(([k,l])=>`<button class="tk">${K(k)} ${l}</button>`).join('')}</div><div style="display:flex;gap:10px"><a class="link">UNSUBSCRIBE</a><a class="link">LOAD VIA PROXY</a></div>`),
+ comp('INPUTS',`<label><span class="lbl">Email</span><div class="inp">oleg@icloud.com</div></label><label><span class="lbl">Focused</span><div class="inp on">abcd-efgh<span class="caret"></span></div></label><label><span class="lbl">Error</span><div class="inp err">wrong-password</div></label>`),
+ comp('CONTROLS',`<div style="display:flex;gap:14px;align-items:center"><span class="tgl on"></span><span class="tgl"></span><span class="chk on"></span><span class="chk"></span></div><div class="seg"><span class="on">ALL</span><span>UNREAD</span><span>FLAGGED</span><span>FILES</span></div><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">Mira Okafor</span><span class="chip inv">from:mira</span><span class="chip dash">+ ACTION</span></div>`),
+ comp('PROGRESS // BARCODE',`${prog(13,{pc:1})}${prog(62,{thin:1})}<div class="cap" style="font-size:10px">DATA_COMPRESSION_PROGRESS_...</div>`),
+ W('LIST_ROWS // UNREAD · FOCUSED · HOVER · PICKED · TAGGED',[MSGS[0],MSGS[1],MSGS[2],MSGS[3],MSGS[14]].map((m,i)=>row(m,S({cur:1,hover:2}),i)).join(''),{style:'grid-column:1/-1'}),
+ warnWin('','DELETE 14 FOREVER?','THIS CANNOT BE UNDONE',`<div style="display:flex;gap:8px"><button class="btn danger">DELETE ${K('↵')}</button><button class="btn quiet">CANCEL ${K('esc')}</button></div>`),
+ W('STATUS',`<div class="toast" style="position:static;width:auto"><div class="tb">${ico('archive')} ARCHIVED 1 CONVERSATION<span class="sp"></span><button class="btn sm">UNDO ${K('z')}</button></div><div class="cdw"><div class="cd" style="animation:none;width:60%"></div></div></div>`,{on:1,cls:'pop'}),
+ W('SNOOZE_UNTIL',SNZ.slice(0,4).map((x,i)=>`<div class="pi ${i===1?'on':''}">${ico('clock')}<span>${x[0]}</span><span class="k" style="opacity:.6">${x[1]} ${K(i+1)}</span></div>`).join(''),{on:1,cls:'pop',noctl:1,hint:'ESC'}),
+].join('');
+const DEMOS=[
+ ['WINDOW_OPEN','220ms · steps(4) wipe',`<div data-anim="m-open">${W('MOVE_TO',`<div class="pi on">${ico('folder')}<span>/_clients</span></div><div class="pi">${ico('folder')}<span>/_finance</span></div>`,{on:1,cls:'pop',style:'width:220px',noctl:1,hint:'ESC'})}</div>`],
+ ['ROW_ARCHIVE','220ms · slide · collapse',`<div style="width:300px;border:var(--frame);background:var(--paper-2)"><div class="row" data-anim="leaving"><div class="mk"></div><div class="l1"><span class="who">Halcyon CI</span><span class="meta">09:12</span></div></div><div class="row"><div class="mk"></div><div class="l1"><span class="who">Juno Park</span><span class="meta">08:57</span></div></div></div>`],
+ ['NEW_MAIL','900ms · steps(6)',`<div style="width:300px;border:var(--frame);background:var(--paper-2)"><div class="row un" data-anim="arrive"><div class="mk"></div><div class="l1"><span class="who">Mira Okafor</span><span class="meta">now</span></div></div></div>`],
+ ['STATUS_IN + TYPE_ON','200ms steps(4) + 500ms type',`<div data-anim="m-toast" style="width:310px">${W('STATUS',`<div class="tb" style="display:flex;gap:10px;padding:9px 12px;font:500 12px var(--f-mono)">${ico('archive')}<span class="m-type">ARCHIVED 1 CONVERSATION</span></div><div class="cdw" style="height:6px;margin:0 10px 10px;border:1px solid var(--line);padding:1px"><div class="cd" style="height:100%;background:repeating-conic-gradient(var(--ink) 0 25%,transparent 0 50%) 0 0/2px 2px;animation:drain 3s linear both"></div></div>`,{on:1,cls:'pop'})}</div>`],
+ ['PALETTE','140ms · ease-out',`<div data-anim="m-pal" style="width:280px">${W('COMMAND_PALETTE',`<div class="pq" style="height:38px;font-size:13px">&gt;&gt; arch<span class="caret"></span></div><div class="pi on">${ico('archive')}<span>Archive</span></div>`,{on:1,cls:'pop',noctl:1})}</div>`],
+ ['SYNC_COMPLETE','420ms · steps(1) flicker',`<div style="width:260px;display:grid;gap:6px" data-anim="m-flick">${prog(100)}<span class="cap">INBOX_READY // 100%</span></div>`],
+];
+$('#demos').innerHTML=DEMOS.map(([t,d,h],i)=>W(t,`<div class="dots" style="height:150px;display:grid;place-items:center;border-bottom:var(--frame);overflow:hidden" id="demo${i}">${h}</div><div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px" class="cap"><span style="font-size:10.5px">${d}</span><button class="btn sm" data-replay="${i}">REPLAY ↻</button></div>`)).join('');
+function replay(i){const st=$('#demo'+i);st.innerHTML=DEMOS[i][2];st.querySelectorAll('[data-anim]').forEach(e=>{e.classList.remove(e.dataset.anim);void e.offsetWidth;e.classList.add(e.dataset.anim)})}
+DEMOS.forEach((_,i)=>replay(i));setInterval(()=>DEMOS.forEach((_,i)=>replay(i)),4200);
+
+const RENDER={};let rid=0;
+const scaleObs=new ResizeObserver(es=>es.forEach(e=>{const f=e.target;const st=f.querySelector('.st');if(st)st.style.transform=`scale(${f.clientWidth/(f.classList.contains('ph')?390:1440)})`}));
+const lazy=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting&&!e.target.dataset.done){e.target.dataset.done=1;const st=e.target.querySelector('.st');st.innerHTML=RENDER[e.target.dataset.r].fn();st.inert=true}}),{rootMargin:'800px'});
+function frame(fn,ph,meta){const id='r'+(rid++);RENDER[id]={fn,ph,...meta};return `<div class="frame ${ph?'ph':''}" data-r="${id}"><div class="st"></div></div>`}
+const figure=(t,fn,ph,note)=>`<section class="win fig ${ph?'phw':''}"><div class="wt"><span class="t">${t}</span>${CTL()}</div><div class="wb">${frame(fn,ph,{t,note})}</div>${note?`<div class="cap2">${note}</div>`:''}</section>`;
+let sh='',grid='',phones='';
+const flush=()=>{if(grid)sh+=`<div class="screens">${grid}</div>`;if(phones)sh+=`<div class="phones">${phones}</div>`;grid='';phones=''};
+SCREENS.forEach(x=>{
+  if(x.length===2){flush();sh+=`<div class="sub-h" id="g-${x[0]}">/_${x[0]} // ${x[1]}</div>`;return}
+  const [id,t,k,fn,note]=x;const f=figure(`SCREEN ${id} // ${t.replace(/^[A-Z_]+ \/\/ /,'')}`,fn,k===P,note);if(k===P)phones+=f;else grid+=f;
+});
+flush();
+$('#screenlist').innerHTML=sh;
+$('#flowlist').innerHTML=FLOWS.map(([t,steps],n)=>`<div style="display:grid;gap:14px"><div class="sub-h" style="margin:0">FLOW_0${n+1} // ${t}</div><div class="steps">${steps.map(([c,fn],i)=>figure(`STEP_0${i+1}`,fn,false,c)).join('')}</div></div>`).join('');
+document.querySelectorAll('.frame[data-r]').forEach(f=>{scaleObs.observe(f);lazy.observe(f)});
+document.addEventListener('click',e=>{
+  const rb=e.target.closest('[data-replay]');if(rb){replay(+rb.dataset.replay);return}
+  const f=e.target.closest('.frame[data-r]');
+  if(f&&!f.closest('.lightbox')){const r=RENDER[f.dataset.r];const lb=document.createElement('div');lb.className='lightbox';lb.innerHTML=figure(r.t,r.fn,r.ph,r.note);document.body.appendChild(lb);const nf=lb.querySelector('.frame');nf.querySelector('.st').innerHTML=r.fn();nf.querySelector('.st').inert=true;scaleObs.observe(nf);lb.addEventListener('click',()=>lb.remove());return}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const lb=$('.lightbox');if(lb)lb.remove()}});
+
+const KB=['`1234567890-=','qwertyuiop[]',"asdfghjkl;'",'zxcvbnm,./'];
+const KA={e:'ARCHIVE',j:'NEXT',k:'PREV',o:'OPEN',u:'BACK',r:'REPLY',a:'REPLY ALL',f:'FWD',c:'COMPOSE',s:'FLAG',x:'SELECT',v:'MOVE',h:'SNOOZE',z:'UNDO',g:'GO TO…',n:'NEXT MSG',p:'PREV MSG','/':'SEARCH',';':'EXPAND','3':'⇧ TRASH','1':'⇧ JUNK','8':'⇧ SELECT…',i:'⇧ READ',l:'LABEL'};
+$('#kbmap').innerHTML=KB.map((r,ri)=>`<div class="kbrow" style="padding-left:${ri*22}px">${[...r].map(ch=>`<div class="kk ${KA[ch]?'on':''}"><span class="c">${ch}</span><span class="a">${KA[ch]||''}</span></div>`).join('')}</div>`).join('')+`<div class="kbrow"><div class="kk on w2"><span class="c">esc</span><span class="a">CLOSE / BACK</span></div><div class="kk on w2"><span class="c">tab</span><span class="a">NEXT WINDOW</span></div><div class="kk on w2"><span class="c">⌘</span><span class="a">+K PALETTE<br>+↵ SEND</span></div><div class="kk spc"><span class="c">space</span><span class="a">PAGE DOWN</span></div><div class="kk on w2"><span class="c">?</span><span class="a">KEYMAP</span></div></div>`;
+$('#syncstates').innerHTML=[[S(),'LIVE'],[S({pending:2,syncId:48215}),'OPTIMISTIC: UI ALREADY SHOWS THE RESULT'],[S({chord:'g'}),'CHORD PENDING // 900MS'],[S({offline:true,pending:3}),'OFFLINE // CACHED MAIL READABLE'],[S({authErr:true}),'PAUSED UNTIL RELINK']].map(([s,t])=>W('STATUS_BAR // '+t,`<div style="overflow:hidden;height:26px"><div style="width:1440px">${statbar(s)}</div></div>`,{noctl:1})).join('');
+
+/* ===================== LIVE ===================== */
+let L=S(),armed=false,lastEsc=0,chordT=null,undo=[],toastT=null;
+const stage=$('#livestage'),lf=$('#liveframe');scaleObs.observe(lf);
+function draw(){
+  stage.innerHTML=renderApp(L);
+  const inp=stage.querySelector('#pq')||stage.querySelector('#sq');if(inp&&armed){inp.focus({preventScroll:true});inp.setSelectionRange(inp.value.length,inp.value.length)}
+  const cur=stage.querySelector('.row.cur');if(cur){const rs=cur.closest('.rows');const top=cur.offsetTop-rs.offsetTop,bot=top+cur.offsetHeight;if(top<rs.scrollTop+30)rs.scrollTop=top-60;else if(bot>rs.scrollTop+rs.clientHeight)rs.scrollTop=bot-rs.clientHeight+20}
+}
+function arm(v){armed=v;$('#capture').style.display=v?'none':'grid';$('#livewin').classList.toggle('armed',v);$('#capstate').textContent='KEYBOARD_CAPTURE: '+(v?'ON':'OFF');if(v)draw()}
+$('#capture').addEventListener('click',()=>arm(true));
+document.addEventListener('mousedown',e=>{if(armed&&!lf.contains(e.target)&&!e.target.closest('.live-ctl'))arm(false)});
+function say(t){clearTimeout(toastT);L.toast=t;draw();toastT=setTimeout(()=>{L.toast=null;draw()},t.cd?5000:2600)}
+const curMsg=()=>visible(L)[L.cur];
+const snap=()=>{undo.push(JSON.stringify({msgs:L.msgs,cur:L.cur}));if(undo.length>20)undo.shift()};
+function bump(){L.pending++;L.syncId++;if(L.offline)return;setTimeout(()=>{L.pending=Math.max(0,L.pending-1);draw()},350)}
+function removeCur(dest,label,icon){
+  const ids=L.picked.length?L.picked:[curMsg()&&curMsg().id].filter(Boolean);if(!ids.length)return;snap();
+  ids.forEach(id=>{const el=stage.querySelector(`.row[data-id="${id}"]`);if(el)el.classList.add('leaving')});
+  setTimeout(()=>{L.msgs.forEach(m=>{if(ids.includes(m.id)){m.f=dest;m.un=0}});L.picked=[];const n=visible(L).length;if(L.cur>=n)L.cur=Math.max(0,n-1);bump();say({icon,text:`${label} ${ids.length} CONVERSATION${ids.length>1?'S':''}`,undo:1,cd:1})},200);
+}
+function act(a){
+  const m=curMsg();
+  switch(a){
+   case'next':L.cur=Math.min(L.cur+1,visible(L).length-1);L.reply=false;L.expanded=false;break;
+   case'prev':L.cur=Math.max(L.cur-1,0);L.reply=false;L.expanded=false;break;
+   case'archive':return removeCur('archive','ARCHIVED','archive');
+   case'trash':return removeCur('trash','TRASHED','trash');
+   case'junk':return removeCur('junk','JUNKED','junk');
+   case'flag':if(m){snap();m.fl=m.fl?null:'red';bump();say({icon:'flag',text:m.fl?'FLAGGED RED':'UNFLAGGED'})}return;
+   case'read':if(m){m.un=0;bump()}break;
+   case'unread':if(m){m.un=1;bump()}break;
+   case'select':if(m)L.picked=L.picked.includes(m.id)?L.picked.filter(x=>x!==m.id):[...L.picked,m.id];break;
+   case'undo':{const u=undo.pop();if(u){const o=JSON.parse(u);L.msgs=o.msgs;L.cur=o.cur;bump();say({icon:'check',text:'UNDONE // INVERSE TX SENT'})}return}
+   case'compose':L.compose='float';L.overlay=null;break;
+   case'reply':L.reply=true;L.focus='reader';break;
+   case'expand':L.expanded=!L.expanded;break;
+   case'palette':L.overlay='palette';L.pal='';L.palI=0;break;
+   case'help':L.overlay=L.overlay==='help'?null:'help';break;
+   case'search':L.overlay='search';L.q='';break;
+   case'move':case'snooze':L.overlay=a;L.pickI=0;break;
+   case'flagc':L.overlay='flag';L.pickI=0;break;
+   case'settings':L.view='settings';L.tab='account';break;
+   case'mail':L.view='mail';break;
+   case'unside':L.side=true;L.max=false;break;
+   case'unmax':L.max=false;break;
+  }
+  draw();
+}
+function runPal(){
+  const q=L.pal.toLowerCase();const all=PAL.filter(x=>x.length>1);const it=all.filter(x=>x[0].toLowerCase().includes(q))[L.palI];L.overlay=null;
+  if(!it){if(L.pal){L.search=L.pal;L.cur=0}draw();return}
+  const a=PAL_ACT[all.indexOf(it)];if(!a){draw();return}
+  if(a.startsWith('go:')){L.folder=a.slice(3);L.cur=0;L.search=null;draw();return}
+  if(a.startsWith('settings:')){L.view='settings';L.tab=a.slice(9);draw();return}
+  if(a==='theme'){toggleTheme();draw();return}
+  act(a);
+}
+window.addEventListener('keydown',e=>{
+  if(!armed)return;const k=e.key,meta=e.metaKey||e.ctrlKey;
+  if(meta&&k.toLowerCase()==='k'){e.preventDefault();act('palette');return}
+  if(L.overlay==='palette'){if(k==='Escape'){L.overlay=null;draw();e.preventDefault()}else if(k==='ArrowDown'){L.palI++;draw();e.preventDefault()}else if(k==='ArrowUp'){L.palI=Math.max(0,L.palI-1);draw();e.preventDefault()}else if(k==='Enter'){runPal();e.preventDefault()}return}
+  if(L.overlay==='search'){if(k==='Escape'){L.overlay=null;L.search=null;draw();e.preventDefault()}else if(k==='Enter'){L.search=L.q||null;L.overlay=null;L.cur=0;draw();e.preventDefault()}return}
+  if(['move','snooze','flag'].includes(L.overlay)){
+    const n=L.overlay==='move'?MOVE.filter(x=>x.includes('cli')).length:L.overlay==='snooze'?SNZ.length:FLC.length;e.preventDefault();
+    if(k==='Escape'){L.overlay=null;draw();return}
+    if(k==='ArrowDown'||k==='j'){L.pickI=(L.pickI+1)%n;draw();return}
+    if(k==='ArrowUp'||k==='k'){L.pickI=(L.pickI-1+n)%n;draw();return}
+    const num=+k;if(num>=1&&num<=n)L.pickI=num-1;
+    if(k==='Enter'||(num>=1&&num<=n)){const o=L.overlay;L.overlay=null;
+      if(o==='flag'){const m=curMsg();if(m){snap();m.fl=FLC[L.pickI];bump();say({icon:'flag',text:`FLAG → ${FLC[L.pickI].toUpperCase()} // SYNCED`})}return}
+      if(o==='snooze')return removeCur('snoozed',`SNOOZED → ${SNZ[L.pickI][1].toUpperCase()} //`,'clock');
+      return removeCur('archive',`MOVED → ${MOVE.filter(x=>x.includes('cli'))[L.pickI].toUpperCase()} //`,'folder')}
+    return}
+  if(L.overlay==='help'){if(k==='Escape'||k==='?'){L.overlay=null;draw()}e.preventDefault();return}
+  if(L.compose){
+    if(k==='Escape'){L.minis=['P0_ESTIMATE_HOLDS'];L.compose=null;draw();e.preventDefault()}
+    else if(meta&&k==='Enter'){L.compose=null;L.minis=[];say({title:'OUTBOX',icon:'send',text:'SENDING IN 10S',undo:1,cd:1});e.preventDefault()}
+    else if(meta&&e.shiftKey&&k.toLowerCase()==='f'){L.compose=L.compose==='full'?'float':'full';draw();e.preventDefault()}
+    return}
+  if(L.view==='settings'){if(k==='Escape'){L.view='mail';draw();e.preventDefault()}return}
+  if(meta&&k==='Enter'&&L.reply){L.reply=false;say({title:'OUTBOX',icon:'send',text:'SENDING IN 10S',undo:1,cd:1});e.preventDefault();return}
+  if(meta&&k===','){act('settings');e.preventDefault();return}
+  if(meta)return;
+  if(L.chord){const map={i:'inbox',s:'sent',d:'drafts',t:'trash',a:'archive',f:'flagged',v:'vip',z:'snoozed'};clearTimeout(chordT);
+    if(L.chord==='g'&&map[k]){L.folder=map[k];L.cur=0;L.search=null;L.picked=[]}
+    if(L.chord==='*'){const v=visible(L);if(k==='a')L.picked=v.map(x=>x.id);if(k==='n')L.picked=[];if(k==='u')L.picked=v.filter(x=>x.un).map(x=>x.id)}
+    L.chord=null;draw();e.preventDefault();return}
+  if(k==='g'||k==='*'){L.chord=k;draw();chordT=setTimeout(()=>{L.chord=null;draw()},900);e.preventDefault();return}
+  if(k==='Escape'){if(L.max)L.max=false;else if(L.reply)L.reply=false;else if(L.search){L.search=null;L.cur=0}else if(L.picked.length)L.picked=[];else if(L.minis.length){L.compose='float';L.minis=[]}else{if(Date.now()-lastEsc<500)arm(false);lastEsc=Date.now()}draw();e.preventDefault();return}
+  if(k==='Tab'){const o=L.side?['side','list','reader']:['list','reader'];L.focus=o[(o.indexOf(L.focus)+1)%o.length];draw();e.preventDefault();return}
+  if(k==='Enter'||k==='o'){L.focus='reader';draw();e.preventDefault();return}
+  if(k==='u'){L.focus='list';L.reply=false;L.max=false;draw();e.preventDefault();return}
+  const M={j:'next',ArrowDown:'next',k:'prev',ArrowUp:'prev',e:'archive','#':'trash','!':'junk',s:'flag',S:'flagc',I:'read',U:'unread',x:'select',z:'undo',c:'compose',r:'reply',a:'reply',f:'compose',';':'expand','?':'help','/':'search',v:'move',h:'snooze'};
+  if(M[k]){e.preventDefault();act(M[k]);if(M[k]==='next'||M[k]==='prev'){const m=curMsg();if(m&&m.un)setTimeout(()=>{if(curMsg()===m&&m.un){m.un=0;bump();draw()}},700)}}
+});
+stage.addEventListener('input',e=>{if(e.target.id==='pq'){L.pal=e.target.value;L.palI=0;draw()}if(e.target.id==='sq'){L.q=e.target.value;L.search=L.q||null;L.cur=0;draw()}});
+stage.addEventListener('click',e=>{
+  if(!armed)return;
+  const c=e.target.closest('[data-ctl-a]');if(c){const [op,w]=c.dataset.ctlA.split('-');if(w==='side'&&op!=='max')L.side=false;if(w==='reader'&&op==='max')L.max=!L.max;if(w==='list'&&op==='max')L.max=false;if(w==='reader'&&op==='close')L.cur=-1;if(op==='min'&&w!=='side'){L.side=!L.side}draw();return}
+  const qa=e.target.closest('.qa .ib');if(qa){const r=qa.closest('.row');L.cur=+r.dataset.i;const t=qa.title[0];act(t==='A'?'archive':t==='S'?'snooze':t==='F'?'flag':'trash');return}
+  const r=e.target.closest('.row');if(r&&r.dataset.i){L.cur=+r.dataset.i;L.focus='list';L.reply=false;draw();return}
+  const n=e.target.closest('[data-f]');if(n){L.folder=n.dataset.f;L.cur=0;L.search=null;draw();return}
+  const tb=e.target.closest('[data-tab]');if(tb){L.tab=tb.dataset.tab;draw();return}
+  const fl=e.target.closest('[data-filter]');if(fl){L.filter=fl.dataset.filter;L.cur=0;draw();return}
+  const b=e.target.closest('[data-a]');if(b)act(b.dataset.a);
+});
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{
+  const p=b.dataset.preset;
+  if(p==='inbox'){L=S({signal:L.signal});undo=[]}
+  if(p==='offline'){L.offline=!L.offline;if(!L.offline){const n=L.pending;L.pending=0;arm(true);say({icon:'check',text:`LINK: UP // ${n} TX CONFIRMED`});return}}
+  if(p==='newmail'){const id=Date.now();L.msgs.unshift({id,f:'inbox',who:'Priya Natarajan',em:'priya@natarajan.studio',subj:'tokens workshop: dates',snip:'Nov 12, 13 or 19 work on my side. Two hours, remote, I’ll bring the audit template.',t:'now',day:'Today',un:1,vip:1});L.folder='inbox';L.search=null;L.cur=Math.min(L.cur+1,visible(L).length-1);L.arrive=id;L.syncId++;setTimeout(()=>{L.arrive=null},1000);arm(true);say({title:'NEW_MAIL',icon:'mail',text:'PRIYA NATARAJAN // IDLE → SSE 0.9S',right:1});return}
+  if(p==='agent'){const t=L.msgs.filter(m=>m.f==='inbox'&&m.list);snap();arm(true);t.forEach(m=>{const el=stage.querySelector(`.row[data-id="${m.id}"]`);if(el)el.classList.add('leaving')});setTimeout(()=>{t.forEach(m=>m.f='archive');L.syncId++;const n=visible(L).length;if(L.cur>=n)L.cur=n-1;say({title:'AGENT',icon:'agent',text:`CLAUDE_DESKTOP ARCHIVED ${t.length} // MCP`,undo:1})},200);return}
+  arm(true);
+}));
+$('#sigbtn').addEventListener('click',()=>{L.signal=!L.signal;$('#sigbtn').textContent='Signal: '+(L.signal?'on':'off');draw()});
+function toggleTheme(){const r=document.documentElement;const dark=r.dataset.theme==='dark'||(!r.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);r.dataset.theme=dark?'light':'dark'}
+$('#themebtn').addEventListener('click',toggleTheme);
+const secObs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)document.querySelectorAll('.toc a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id))}),{rootMargin:'-40% 0px -55% 0px'});
+document.querySelectorAll('section.s,.sub-h[id]').forEach(s=>secObs.observe(s));
+draw();
+</script>
+</body>
+</html>

@@ -33,12 +33,130 @@ func TestUnauthorizedAndOrigin(t *testing.T) {
 	for _, tc := range []struct {
 		method, path string
 		want         int
-	}{{"GET", "/api/me", 401}, {"PUT", "/api/account", 403}, {"POST", "/auth/logout", 403}, {"GET", "/.well-known/oauth-protected-resource/mcp", 200}} {
+	}{{"GET", "/api/me", 401}, {"PUT", "/api/account", 403}, {"POST", "/auth/logout", 403}, {"POST", "/auth/resend", 403}, {"GET", "/.well-known/oauth-protected-resource/mcp", 200}} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
 		if w.Code != tc.want {
 			t.Errorf("%s: %d", tc.path, w.Code)
 		}
+	}
+}
+
+func TestResendVerificationWithoutPassword(t *testing.T) {
+	uri := os.Getenv("MAIL_TEST_MONGODB_URI")
+	if uri == "" {
+		t.Skip("set MAIL_TEST_MONGODB_URI for Mongo integration")
+	}
+	ctx := context.Background()
+	s, err := auth.New(ctx, auth.Config{BaseURL: "https://mail.example.com", MongoURI: uri, ResendAPIKey: "test", EmailFrom: "test@example.com", EncryptionKey: base64.StdEncoding.EncodeToString(make([]byte, 32))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(ctx)
+	email := "resend-" + strings.ToLower(auth.Random()) + "@olegpustovit.com"
+	original := auth.Random()
+	if err = s.Put(ctx, auth.Record{ID: auth.Hash(original), Kind: "verify", Email: email, Data: "existing-password-hash", Expires: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Delete(ctx, original)
+	h := New(s)
+	sent := 0
+	fresh := ""
+	h.emailClient = &http.Client{Transport: emailRoundTripper(func(r *http.Request) (*http.Response, error) {
+		var payload struct {
+			HTML string `json:"html"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		match := regexp.MustCompile(`token=([^"&<]+)`).FindStringSubmatch(payload.HTML)
+		if len(match) != 2 {
+			t.Fatal("missing verification token")
+		}
+		fresh = match[1]
+		sent++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})}
+	defer func() {
+		if fresh != "" {
+			_ = s.Delete(ctx, fresh)
+		}
+	}()
+	mux := http.NewServeMux()
+	h.Register(mux)
+	post := func(email string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]string{"email": email})
+		r := httptest.NewRequest("POST", "/auth/resend", strings.NewReader(string(body)))
+		r.Header.Set("Origin", "https://mail.example.com")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w
+	}
+	if w := post(email); w.Code != 202 || sent != 1 {
+		t.Fatalf("resend: %d, emails=%d", w.Code, sent)
+	}
+	record, err := s.Get(ctx, fresh, "verify", false)
+	if err != nil || record.Data != "existing-password-hash" || time.Until(record.Expires) > 30*time.Minute+time.Second {
+		t.Fatal("resend changed credentials or expiry", err)
+	}
+	if w := post("missing-" + email); w.Code != 202 || sent != 1 {
+		t.Fatal("resend disclosed an unknown registration or sent unsolicited mail")
+	}
+}
+
+func TestAccountPersistencePrecedesSyncInvalidation(t *testing.T) {
+	uri := os.Getenv("MAIL_TEST_MONGODB_URI")
+	if uri == "" {
+		t.Skip("set MAIL_TEST_MONGODB_URI for Mongo integration")
+	}
+	ctx := context.Background()
+	s, err := auth.New(ctx, auth.Config{BaseURL: "https://mail.example.com", MongoURI: uri, ResendAPIKey: "test", EmailFrom: "test@example.com", EncryptionKey: base64.StdEncoding.EncodeToString(make([]byte, 32))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(ctx)
+	owner := "link-order-" + strings.ToLower(auth.Random()) + "@olegpustovit.com"
+	session := auth.Random()
+	if err = s.Put(ctx, auth.Record{ID: auth.Hash(session), Kind: "session", Email: owner, Expires: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Delete(ctx, session)
+	defer s.DeleteAccount(ctx, owner)
+	h := New(s)
+	h.ValidateAccount = func(context.Context, string, string, string) error { return nil }
+	checked := 0
+	h.InvalidateAccount = func(ctx context.Context, email string, disconnect bool) error {
+		checked++
+		account, err := s.Account(ctx, email)
+		if err != nil {
+			return err
+		}
+		if disconnect && len(account.Secret) != 0 {
+			t.Fatal("unlink invalidated sync before deleting credentials")
+		}
+		if !disconnect && account.ICloudEmail != "new@icloud.com" {
+			t.Fatal("replace invalidated sync before saving new credentials")
+		}
+		return nil
+	}
+	mux := http.NewServeMux()
+	h.Register(mux)
+	for _, method := range []string{"PUT", "DELETE"} {
+		body := `{"email":"new@icloud.com","password":"app-specific-password"}`
+		if method == "DELETE" {
+			body = ""
+		}
+		r := httptest.NewRequest(method, "/api/account", strings.NewReader(body))
+		r.Header.Set("Origin", "https://mail.example.com")
+		r.AddCookie(&http.Cookie{Name: "__Host-mail_session", Value: session})
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		if w.Code != 204 {
+			t.Fatalf("%s: %d %s", method, w.Code, w.Body.String())
+		}
+	}
+	if checked != 2 {
+		t.Fatal("credential changes did not invalidate synchronization")
 	}
 }
 func TestOAuthPKCEIntegration(t *testing.T) {

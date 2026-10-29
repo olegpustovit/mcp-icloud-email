@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/base64"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -75,6 +76,49 @@ func TestMongoCredentialIsolationAndTokens(t *testing.T) {
 	}
 	if _, e = s.Get(ctx, expired, "access", false); e != ErrUnauthorized {
 		t.Fatal("expired token accepted before TTL cleanup")
+	}
+	clientID, access, otherAccess := Random(), Random(), Random()
+	owner, otherOwner := "one@olegpustovit.com", "two@olegpustovit.com"
+	for _, record := range []Record{{ID: Hash(clientID), Kind: "client", Data: `{"client_name":"Test agent"}`, Expires: time.Now().Add(time.Hour)}, {ID: Hash(access), Kind: "access", Email: owner, ClientID: clientID, Resource: s.Config.BaseURL + "/mcp", Expires: time.Now().Add(time.Hour)}, {ID: Hash(otherAccess), Kind: "access", Email: otherOwner, ClientID: clientID, Resource: s.Config.BaseURL + "/mcp", Expires: time.Now().Add(time.Hour)}} {
+		if e = s.Put(ctx, record); e != nil {
+			t.Fatal(e)
+		}
+	}
+	request := httptest.NewRequest("POST", s.Config.BaseURL+"/mcp", nil)
+	request.Header.Set("Authorization", "Bearer "+access)
+	identity, actor, e := s.AuthenticateClient(request)
+	if e != nil || identity != owner || actor != "mcp:"+clientID {
+		t.Fatalf("client attribution failed: owner=%s actor=%s err=%v", identity, actor, e)
+	}
+	clients, e := s.Clients(ctx, owner)
+	if e != nil || len(clients) != 1 || clients[0].Name != "Test agent" || clients[0].LastUsed.IsZero() {
+		t.Fatalf("client list: %+v err=%v", clients, e)
+	}
+	if e = s.RevokeClient(ctx, owner, clientID); e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e = s.AuthenticateClient(request); e != ErrUnauthorized {
+		t.Fatal("revoked client retained access")
+	}
+	request.Header.Set("Authorization", "Bearer "+otherAccess)
+	if identity, _, e = s.AuthenticateClient(request); e != nil || identity != otherOwner {
+		t.Fatal("revocation crossed owners")
+	}
+	current, second, otherSession := Random(), Random(), Random()
+	for _, record := range []Record{{ID: Hash(current), Kind: "session", Email: owner, Expires: time.Now().Add(time.Hour)}, {ID: Hash(second), Kind: "session", Email: owner, Expires: time.Now().Add(time.Hour)}, {ID: Hash(otherSession), Kind: "session", Email: otherOwner, Expires: time.Now().Add(time.Hour)}} {
+		if e = s.Put(ctx, record); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e = s.RevokeOtherSessions(ctx, owner, current); e != nil {
+		t.Fatal(e)
+	}
+	sessions, e := s.Sessions(ctx, owner, current)
+	if e != nil || len(sessions) != 1 || !sessions[0].Current {
+		t.Fatal("session revocation removed current browser or retained another one")
+	}
+	if _, e = s.Get(ctx, otherSession, "session", false); e != nil {
+		t.Fatal("session revocation crossed owners")
 	}
 }
 func TestPasswordHash(t *testing.T) {

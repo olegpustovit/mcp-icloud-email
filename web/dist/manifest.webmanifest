@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Terminal Mail",
+  "short_name": "Terminal Mail",
+  "description": "Your iCloud Mail workspace, alongside your MCP clients.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#E6E6E1",
+  "theme_color": "#4A4A46",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "protocol_handlers": [{ "protocol": "mailto", "url": "/?mailto=%s" }]
+}

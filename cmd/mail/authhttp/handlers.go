@@ -19,7 +19,8 @@ import (
 )
 
 type Handler struct {
-	InvalidateAccount func(context.Context, string) error
+	InvalidateAccount func(context.Context, string, bool) error
+	ValidateAccount   func(context.Context, string, string, string) error
 	s                 *auth.Service
 	emailClient       *http.Client
 	mu                sync.Mutex
@@ -32,6 +33,7 @@ func New(s *auth.Service) *Handler { return &Handler{s: s, emailClient: http.Def
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/login", h.limited(h.login))
 	mux.HandleFunc("POST /auth/register", h.limited(h.signup))
+	mux.HandleFunc("POST /auth/resend", h.limited(h.resend))
 	mux.HandleFunc("GET /auth/verify", h.limited(h.verify))
 	mux.HandleFunc("POST /auth/forgot", h.limited(h.forgot))
 	mux.HandleFunc("POST /auth/reset", h.limited(h.reset))
@@ -39,6 +41,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/me", h.me)
 	mux.HandleFunc("PUT /api/account", h.account)
 	mux.HandleFunc("DELETE /api/account", h.account)
+	mux.HandleFunc("GET /api/clients", h.clients)
+	mux.HandleFunc("DELETE /api/clients/{id}", h.clients)
+	mux.HandleFunc("GET /api/sessions", h.sessions)
+	mux.HandleFunc("DELETE /api/sessions", h.sessions)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", publicOAuth(h.metadata))
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server/mcp", publicOAuth(h.metadata))
 	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/mcp", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp", "/oauth/register", "/oauth/token", "/oauth/revoke"} {
@@ -80,7 +86,7 @@ func (h *Handler) origin(r *http.Request) bool { return r.Header.Get("Origin") =
 func (h *Handler) cookie(w http.ResponseWriter, name, value string, age int) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: age})
 }
-func (h *Handler) session(r *http.Request) (string, error) {
+func (h *Handler) Session(r *http.Request) (string, error) {
 	c, e := r.Cookie("__Host-mail_session")
 	if e != nil {
 		return "", auth.ErrUnauthorized
@@ -106,10 +112,11 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.cookie(w, "__Host-mail_session", "", -1)
+	w.Header().Set("Clear-Site-Data", `"storage"`)
 	w.WriteHeader(204)
 }
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
-	email, e := h.session(r)
+	email, e := h.Session(r)
 	if e != nil {
 		fail(w, 401, "login_required")
 		return
@@ -130,18 +137,13 @@ func (h *Handler) account(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "invalid_origin")
 		return
 	}
-	email, e := h.session(r)
+	email, e := h.Session(r)
 	if e != nil {
 		fail(w, 401, "login_required")
 		return
 	}
 	if r.Method == "DELETE" {
-		if h.InvalidateAccount != nil {
-			if err := h.InvalidateAccount(r.Context(), email); err != nil {
-				fail(w, 500, "account_update_failed")
-				return
-			}
-		}
+
 		e = h.s.DeleteAccount(r.Context(), email)
 	} else {
 		var input struct {
@@ -158,28 +160,32 @@ func (h *Handler) account(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "valid_email_and_app_specific_password_required")
 			return
 		}
-		connection, err := icloudimap.NewClient(input.Email, input.Password)
+		if h.ValidateAccount != nil {
+			err = h.ValidateAccount(r.Context(), email, input.Email, input.Password)
+		} else {
+			connection, connectErr := icloudimap.NewClient(input.Email, input.Password)
+			err = connectErr
+			if err == nil {
+				_, err = connection.ListFolders(r.Context())
+				err = errors.Join(err, connection.Close())
+			}
+		}
 		if err != nil {
 			fail(w, 400, "icloud_login_failed_check_app_specific_password")
 			return
 		}
-		_, err = connection.ListFolders(r.Context())
-		closeErr := connection.Close()
-		if err != nil || closeErr != nil {
-			fail(w, 502, "icloud_connection_failed")
-			return
-		}
-		if h.InvalidateAccount != nil {
-			if err := h.InvalidateAccount(r.Context(), email); err != nil {
-				fail(w, 500, "account_update_failed")
-				return
-			}
-		}
+
 		e = h.s.SaveAccount(r.Context(), email, input.Email, input.Password)
 	}
 	if e != nil {
 		fail(w, 500, "account_update_failed")
 		return
+	}
+	if h.InvalidateAccount != nil {
+		if err := h.InvalidateAccount(r.Context(), email, r.Method == "DELETE"); err != nil {
+			fail(w, 500, "account_update_failed")
+			return
+		}
 	}
 	w.WriteHeader(204)
 }
@@ -266,7 +272,7 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request")
 		return
 	}
-	email, e := h.session(r)
+	email, e := h.Session(r)
 	if e != nil {
 		http.Redirect(w, r, "/?login=1&next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 		return
@@ -397,7 +403,7 @@ func (h *Handler) limited(next http.HandlerFunc) http.HandlerFunc {
 		}
 		h.requests++
 		allowed := h.requests <= 120
-		if r.URL.Path == "/auth/register" || r.URL.Path == "/auth/forgot" {
+		if r.URL.Path == "/auth/register" || r.URL.Path == "/auth/forgot" || r.URL.Path == "/auth/resend" {
 			h.emailRequests++
 			allowed = allowed && h.emailRequests <= 10
 		}

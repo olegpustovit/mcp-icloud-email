@@ -98,7 +98,7 @@ func TestProductionRoutes(t *testing.T) {
 	for _, tc := range []struct {
 		path   string
 		status int
-	}{{"/", 200}, {"/healthz", 200}, {"/api/me", 401}, {"/mcp", 401}, {"/.well-known/oauth-authorization-server", 200}} {
+	}{{"/", 200}, {"/healthz", 200}, {"/api/me", 401}, {"/api/mail/folders", 401}, {"/api/mail/outbox", 401}, {"/api/mail/preferences", 401}, {"/mcp", 401}, {"/.well-known/oauth-authorization-server", 200}} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", tc.path, nil)
 		r.Host = "mail.microapps.space"

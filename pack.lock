@@ -1,0 +1,95 @@
+lockfile_version = 4
+
+[meta]
+name = 'mcp-icloud-email'
+version = '0.0.1'
+
+[[packages]]
+module = 'github.com/dietrichgebert/ponytail'
+direct = true
+kind = 'plugin'
+url = 'https://github.com/DietrichGebert/ponytail/tree/HEAD'
+owner = 'dietrichgebert'
+repo = 'ponytail'
+commit = '09c434ab73ca43761c5d8b0c5d341926c2fba710'
+cache_key = '342c7d44e548f3e608f3b86db1633e3f6bc286a2189f986e9ee9324ce84e0dfb'
+content_hash = 'sha256-tree-v1:64ff6026eda2d5a0960d5809fab412a4cb016e14b7b2d158c55bb13cc16eb023'
+
+[[packages]]
+module = 'github.com/olegpustovit/agent-configs/drafts/build-go-stack'
+direct = true
+kind = 'skill'
+url = 'https://github.com/olegpustovit/agent-configs/tree/dev/drafts/build-go-stack'
+owner = 'olegpustovit'
+repo = 'agent-configs'
+path = 'drafts/build-go-stack'
+commit = '5ace3e7a37d84481a4ad9ae5d85563a2525c2242'
+cache_key = '95a29e43df08e2c885b7055920693d845280e3283357232742104a0387643935'
+content_hash = 'sha256-tree-v1:d44e1d1557e63799e55657050b2f9efd6f38c4c90124755fb16bca2b3048acb3'
+
+[[packages]]
+module = 'github.com/olegpustovit/agent-configs/mcps/playwright'
+direct = true
+kind = 'plugin'
+url = 'https://github.com/olegpustovit/agent-configs/tree/dev/mcps/playwright'
+owner = 'olegpustovit'
+repo = 'agent-configs'
+path = 'mcps/playwright'
+commit = '5ace3e7a37d84481a4ad9ae5d85563a2525c2242'
+cache_key = '34a182c279db42196f4cb8109ba7b6462ac4c31a146abb7849d2e975d5d6ae8f'
+content_hash = 'sha256-tree-v1:70e653d2cf61f80e08667ad2a197973a9cb5bf058022b7091d6a1aeb2d84e0c9'
+
+[[packages]]
+module = 'github.com/olegpustovit/agent-configs/skills/smdctl-deploy'
+direct = true
+kind = 'skill'
+url = 'https://github.com/olegpustovit/agent-configs/tree/dev/skills/smdctl-deploy'
+owner = 'olegpustovit'
+repo = 'agent-configs'
+path = 'skills/smdctl-deploy'
+commit = '5ace3e7a37d84481a4ad9ae5d85563a2525c2242'
+cache_key = '6943edf1ca76a46a341b924bef78a3ab20d2b4d03d3ba25d19f3996764f71f34'
+content_hash = 'sha256-tree-v1:a40a0bd33c8ebeb1244c380f6398eb0e372d186ad83feb559e9b9728bc306c73'
+
+[[packages]]
+module = 'github.com/pbakaus/impeccable'
+direct = true
+kind = 'plugin'
+url = 'https://github.com/pbakaus/impeccable/tree/HEAD'
+owner = 'pbakaus'
+repo = 'impeccable'
+commit = '7510e233b228864606888d252abacf5e7148bf87'
+cache_key = 'fb5a857aa006bfa8f81b2e7f3df788c7541dbd5265c82bccff107e17451afd7a'
+content_hash = 'sha256-tree-v1:dea4716dbfa681275bcd387eae4b0fb16f8763aedef5afd4b031654bdaa86100'
+
+[[mcp_servers]]
+name = 'playwright'
+source = 'plugin'
+launcher = 'npm'
+status = 'pinned'
+definition = 'sha256:39f1fe8018e119b3502f48ee4c78784d31bba2dd0bc2a4982fc71b32bbf29bf8'
+requested = '@playwright/mcp@latest'
+package = '@playwright/mcp'
+version = '0.0.83'
+integrity = 'sha512-oNcl+Ae2/IAjhfPeP46BfIkSakfmprY+aOtkv5MjrQ4lPav4/yNtPhL0iq8SlIM90oApWgBDUxaNKvktazUKOg=='
+registry = 'https://registry.npmjs.org'
+bin = 'cli.js'
+tree_digest = 'sha256-npm-tree-v1:a8567236c23fa41ae25ac6acfe7052b7a30d81e11cc8e5bbb4ffc6e34676910f'
+
+[[mcp_servers.tree]]
+path = 'node_modules/@playwright/mcp'
+version = '0.0.83'
+integrity = 'sha512-oNcl+Ae2/IAjhfPeP46BfIkSakfmprY+aOtkv5MjrQ4lPav4/yNtPhL0iq8SlIM90oApWgBDUxaNKvktazUKOg=='
+resolved = 'https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.83.tgz'
+
+[[mcp_servers.tree]]
+path = 'node_modules/playwright'
+version = '1.64.0-alpha-1790635538000'
+integrity = 'sha512-/5XDUMxpOd/9AojJtWDFIRV3EJZNQ0AwvK69wgt3CPzy8wTgiBG9pX45VfxtqtvIRGwfWzMhrvawNKreG69Snw=='
+resolved = 'https://registry.npmjs.org/playwright/-/playwright-1.64.0-alpha-1790635538000.tgz'
+
+[[mcp_servers.tree]]
+path = 'node_modules/playwright-core'
+version = '1.64.0-alpha-1790635538000'
+integrity = 'sha512-pNwaXirhXMRLaRQs4NQ18EpTdtDoFwyPH9FOaaDC7YXG4hpwE2xmwCic/1srbuExVQC7zT9LJSJpDBAru+Vo9A=='
+resolved = 'https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.0-alpha-1790635538000.tgz'

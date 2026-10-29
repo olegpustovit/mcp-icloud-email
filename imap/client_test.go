@@ -8,6 +8,16 @@ import (
 	"github.com/emersion/go-imap"
 )
 
+func TestRelatedImagePartsRetainCIDBytes(t *testing.T) {
+	for _, disposition := range []string{"inline", "attachment; filename=logo.png"} {
+		raw := "MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=related\r\n\r\n--related\r\nContent-Type: text/html\r\n\r\n<img src=\"cid:logo@mail\">\r\n--related\r\nContent-Type: image/png\r\nContent-ID: <logo@mail>\r\nContent-Disposition: " + disposition + "\r\nContent-Transfer-Encoding: base64\r\n\r\naW1hZ2UtYnl0ZXM=\r\n--related--\r\n"
+		var email Email
+		if err := (&Client{}).parseEmailBody(&email, strings.NewReader(raw)); err != nil || string(email.InlineImages["logo@mail"]) != "image-bytes" || !strings.Contains(email.BodyHTML, "cid:logo@mail") {
+			t.Fatalf("related part lost: %+v %v", email, err)
+		}
+	}
+}
+
 func TestParseUID(t *testing.T) {
 	for _, id := range []string{"1", "4294967295"} {
 		if _, err := parseUID(id); err != nil {
@@ -18,6 +28,47 @@ func TestParseUID(t *testing.T) {
 		if _, err := parseUID(id); err == nil {
 			t.Errorf("parseUID(%q) unexpectedly succeeded", id)
 		}
+	}
+}
+
+func TestFlagColorsRoundTrip(t *testing.T) {
+	for _, color := range flagColors {
+		keywords, err := flagKeywords("follow-up", color)
+		if err != nil {
+			t.Fatal(err)
+		}
+		flags := make([]string, len(keywords))
+		for i, keyword := range keywords {
+			flags[i] = keyword.(string)
+		}
+		if got := flagColor(flags); got != color {
+			t.Fatalf("%s decoded as %s", color, got)
+		}
+	}
+	if got := flagColor([]string{"$MailFlagBit2"}); got != "" {
+		t.Fatalf("unflagged color: %s", got)
+	}
+	if _, err := flagKeywords("follow-up", "unknown"); err == nil {
+		t.Fatal("accepted unknown color")
+	}
+}
+
+func TestDraftHeaderInjectionRejected(t *testing.T) {
+	for _, tc := range []struct {
+		from, subject string
+		to            []string
+		opts          DraftOptions
+	}{
+		{"me@example.com", "subject\r\nBcc: victim@example.com", nil, DraftOptions{}},
+		{"me@example.com", "subject", []string{"ok@example.com\r\nX: bad"}, DraftOptions{}},
+		{"me@example.com", "subject", nil, DraftOptions{BCC: []string{"bad address"}}},
+	} {
+		if err := validateDraftHeaders(tc.from, tc.to, tc.subject, tc.opts); err == nil {
+			t.Fatal("accepted unsafe draft headers")
+		}
+	}
+	if err := validateDraftHeaders("Me <me@example.com>", []string{"you@example.com"}, "Привіт", DraftOptions{}); err != nil {
+		t.Fatal(err)
 	}
 }
 

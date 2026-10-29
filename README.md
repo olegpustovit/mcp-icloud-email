@@ -1,6 +1,6 @@
 # iCloud Mail MCP
 
-Multiuser iCloud Mail for MCP clients, with a React settings dashboard, email/password login, and MongoDB persistence. Fork of [roygabriel/mcp-icloud-email](https://github.com/roygabriel/mcp-icloud-email).
+Terminal Mail is a multiuser iCloud web client and MCP server, with email/password login and MongoDB persistence. The web client includes conversations, offline triage, drafts, scheduled sends, snooze, rules, private image loading, and attributed agent activity. Fork of [roygabriel/mcp-icloud-email](https://github.com/roygabriel/mcp-icloud-email).
 
 ## Hosted use
 
@@ -12,7 +12,7 @@ Each client grant permits reading, sending, and organizing your connected mailbo
 
 ## Run the hosted server
 
-Requires Go 1.26.10+, Node 22+, MongoDB, and a Resend sending key with a verified sender domain.
+Requires Go 1.26.10+, Node 22.13+, MongoDB, and a Resend sending key with a verified sender domain.
 
 ```sh
 cp .env.example .env
@@ -44,9 +44,15 @@ curl https://mail.microapps.space/healthz
 
 Docker builds the React assets and hosted Go binary. Publish port 4290 and supply the same `MAIL_*` variables. Health is available at `/healthz`; MongoDB is checked at startup.
 
-## Email cache
+## Mail synchronization and offline storage
 
-Fetched full messages are cached in MongoDB for one minute, scoped by user, iCloud account, folder, and message UID. Mailbox mutations invalidate that user/account cache; replacing or disconnecting an account clears the user cache. Cached bodies are stored in MongoDB, so database access also grants access to cached message content. The TTL index cleans expired documents asynchronously; reads enforce expiration immediately. Messages over 8 MiB are served without caching; email and attachment reads reject MIME messages over 20 MiB. External mailbox changes can remain stale for up to one minute.
+The server keeps an owner/account-scoped metadata mirror in MongoDB. One IMAP connection follows Inbox changes with IDLE and another serializes commands and body reads. Other folders are checked every 30 seconds while a browser stream or recent MCP call is active, and every ten minutes otherwise. Servers without IDLE use polling. Folder UIDVALIDITY changes reset that folder's replica.
+
+Browsers share a worker and an IndexedDB replica, with a dedicated-worker fallback. Downloaded bodies use a 200 MB LRU cache on the device. Queued changes survive reloads and are removed only after the server journal confirms them. Signing out or unlinking clears the device replica. Privacy settings can clear downloaded bodies separately. Metadata and its journal are readable to database administrators; scheduled message payloads and push subscription secrets are encrypted with the service encryption key.
+
+Email and attachment reads reject MIME messages over 20 MiB. New messages support up to 30 attachments totaling 10 MiB. Remote images stay blocked until consent or an allowed-sender preference; the proxy validates public destinations and raster content. Embedded CID images are resolved locally. PDF previews render pages without running document scripts or forms. Mailbox content is sanitized and shown in a scriptless iframe.
+
+Undo send and scheduled delivery live on the server, so closing the tab does not cancel them. If SMTP acceptance is uncertain, the outbox requires review and can restore a draft; it never automatically retries an ambiguous send.
 
 ## Local stdio use
 
@@ -66,14 +72,18 @@ Sent emails and replies are saved to the account’s Sent mailbox after SMTP acc
 
 ```sh
 cd web && npm ci && npm test && npm run build
-# From the repository root:
+# Install the test browser once, then run isolated browser and 50k-mailbox checks:
+npx playwright install chromium
+npm run test:browser
+npm run test:performance
+cd ..
 go test ./...
 go vet ./...
 # Include Mongo integration tests against a disposable test server:
 MAIL_TEST_MONGODB_URI=mongodb://127.0.0.1:27018 go test ./...
 ```
 
-The official MCP Go SDK owns protocol negotiation, Streamable HTTP and stdio framing, schema validation, and tool dispatch. Tool discovery does not connect to iCloud. Authenticated tool calls resolve the requesting user's credentials and close their connection afterward.
+The official MCP Go SDK owns protocol negotiation, Streamable HTTP and stdio framing, schema validation, and tool dispatch. Tool discovery does not connect to iCloud. Hosted tool calls share the owner's serialized command connection and mirror with the web client; the standalone stdio command closes its connection after the session.
 
 Passwords use salted scrypt hashes. iCloud credentials use AES-256-GCM authenticated encryption bound to the user. Browser sessions and MCP tokens are opaque, stored hashed, checked for expiration, and scoped to the requesting user. Browser writes require a matching Origin. MCP requests require bearer authentication and reject foreign origins. Email links are single-use and expire. Public authentication routes have bounded rate limits.
 

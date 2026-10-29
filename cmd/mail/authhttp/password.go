@@ -30,7 +30,7 @@ func safeNext(next string) string {
 }
 func (h *Handler) newSession(w http.ResponseWriter, r *http.Request, email string) error {
 	session := auth.Random()
-	if e := h.s.Put(r.Context(), auth.Record{ID: auth.Hash(session), Kind: "session", Email: email, Expires: time.Now().Add(7 * 24 * time.Hour)}); e != nil {
+	if e := h.s.Put(r.Context(), auth.Record{ID: auth.Hash(session), Kind: "session", Email: email, Data: r.UserAgent()[:min(len(r.UserAgent()), 300)], Expires: time.Now().Add(7 * 24 * time.Hour)}); e != nil {
 		return e
 	}
 	h.cookie(w, "__Host-mail_session", session, 7*86400)
@@ -96,7 +96,7 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := auth.Random()
-	if e = h.s.Put(r.Context(), auth.Record{ID: auth.Hash(token), Kind: "verify", Email: in.Email, Data: hash, Redirect: safeNext(in.Next), Expires: time.Now().Add(time.Hour)}); e != nil {
+	if e = h.s.Put(r.Context(), auth.Record{ID: auth.Hash(token), Kind: "verify", Email: in.Email, Data: hash, Redirect: safeNext(in.Next), Expires: time.Now().Add(30 * time.Minute)}); e != nil {
 		fail(w, 500, "request_failed")
 		return
 	}
@@ -106,6 +106,45 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 202, map[string]string{"message": "Check your email to verify your account."})
+}
+
+func (h *Handler) resend(w http.ResponseWriter, r *http.Request) {
+	if !h.origin(r) {
+		fail(w, 403, "invalid_origin")
+		return
+	}
+	var in struct {
+		Email string `json:"email"`
+		Next  string `json:"next,omitempty"`
+	}
+	if decode(w, r, &in) != nil {
+		fail(w, 400, "invalid_json")
+		return
+	}
+	in.Email = normalizeEmail(in.Email)
+	if auth.Allowed(in.Email) {
+		record, err := h.s.PendingVerification(r.Context(), in.Email)
+		if err != nil && !errors.Is(err, auth.ErrUnauthorized) {
+			fail(w, 500, "request_failed")
+			return
+		}
+		if err == nil {
+			token := auth.Random()
+			record.ID = auth.Hash(token)
+			record.Expires = time.Now().Add(30 * time.Minute)
+			record.Redirect = safeNext(in.Next)
+			if err = h.s.Put(r.Context(), record); err != nil {
+				fail(w, 500, "request_failed")
+				return
+			}
+			if err = h.sendEmail(r.Context(), in.Email, "Verify your iCloud Mail account", "Verify your email address", h.s.Config.BaseURL+"/auth/verify?token="+url.QueryEscape(token)); err != nil {
+				_ = h.s.Delete(r.Context(), token)
+				fail(w, 502, "email_unavailable")
+				return
+			}
+		}
+	}
+	jsonResponse(w, 202, map[string]string{"message": "If registration is pending, a fresh verification link is on its way."})
 }
 func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	record, e := h.s.Get(r.Context(), r.URL.Query().Get("token"), "verify", true)
@@ -188,6 +227,7 @@ func (h *Handler) reset(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "request_failed")
 		return
 	}
+	w.Header().Set("Clear-Site-Data", `"storage"`)
 	w.WriteHeader(204)
 }
 func (h *Handler) sendEmail(ctx context.Context, to, subject, label, link string) error {

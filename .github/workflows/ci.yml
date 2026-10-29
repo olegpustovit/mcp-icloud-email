@@ -40,6 +40,12 @@ jobs:
       - name: Build and test React UI
         run: cd web && npm ci && npm test && npm run build
 
+      - name: Install browser
+        run: cd web && npx playwright install --with-deps chromium
+
+      - name: Verify browser workflows and large mailbox budgets
+        run: cd web && npm run test:browser && npm run test:performance
+
       - name: Build hosted server
         run: go build ./cmd/mail
 

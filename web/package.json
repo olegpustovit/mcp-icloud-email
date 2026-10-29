@@ -4,15 +4,19 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "test": "node --test"
+    "build": "vite build && node scripts/service-worker.mjs",
+    "test": "node --test test/*.test.js",
+    "test:browser": "node scripts/verify-browser.mjs",
+    "test:performance": "node scripts/verify-performance.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "6.4.299",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "6.1.2",
+    "playwright": "1.64.1",
     "vite": "8.3.5"
   }
 }

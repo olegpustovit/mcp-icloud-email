@@ -1,0 +1,698 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T06:55:20.279839+00:00",
+  "title": "Design System: Terminal Mail",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0023 106.5)",
+          "oklch(26% 0.0043 106.5)",
+          "oklch(38% 0.0060 106.5)",
+          "oklch(49% 0.0067 106.5)",
+          "oklch(61% 0.0067 106.5)",
+          "oklch(72% 0.0057 106.5)",
+          "oklch(84% 0.0037 106.5)",
+          "oklch(95% 0.0013 106.5)"
+        ]
+      },
+      "paper-2": {
+        "role": "neutral",
+        "displayName": "Paper 2",
+        "tonalRamp": [
+          "oklch(15% 0.0019 106.5)",
+          "oklch(26% 0.0034 106.5)",
+          "oklch(38% 0.0048 106.5)",
+          "oklch(49% 0.0053 106.5)",
+          "oklch(61% 0.0053 106.5)",
+          "oklch(72% 0.0045 106.5)",
+          "oklch(84% 0.0029 106.5)",
+          "oklch(95% 0.0011 106.5)"
+        ]
+      },
+      "paper-3": {
+        "role": "neutral",
+        "displayName": "Paper 3",
+        "tonalRamp": [
+          "oklch(15% 0.0009 106.4)",
+          "oklch(26% 0.0017 106.4)",
+          "oklch(38% 0.0024 106.4)",
+          "oklch(49% 0.0026 106.4)",
+          "oklch(61% 0.0026 106.4)",
+          "oklch(72% 0.0022 106.4)",
+          "oklch(84% 0.0014 106.4)",
+          "oklch(95% 0.0005 106.4)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0007 106.6)",
+          "oklch(26% 0.0013 106.6)",
+          "oklch(38% 0.0018 106.6)",
+          "oklch(49% 0.0020 106.6)",
+          "oklch(61% 0.0020 106.6)",
+          "oklch(72% 0.0017 106.6)",
+          "oklch(84% 0.0011 106.6)",
+          "oklch(95% 0.0004 106.6)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "tonalRamp": [
+          "oklch(15% 0.0012 106.6)",
+          "oklch(26% 0.0023 106.6)",
+          "oklch(38% 0.0032 106.6)",
+          "oklch(49% 0.0035 106.6)",
+          "oklch(61% 0.0035 106.6)",
+          "oklch(72% 0.0030 106.6)",
+          "oklch(84% 0.0019 106.6)",
+          "oklch(95% 0.0007 106.6)"
+        ]
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Mute",
+        "tonalRamp": [
+          "oklch(15% 0.0027 106.7)",
+          "oklch(26% 0.0050 106.7)",
+          "oklch(38% 0.0069 106.7)",
+          "oklch(49% 0.0077 106.7)",
+          "oklch(61% 0.0077 106.7)",
+          "oklch(72% 0.0065 106.7)",
+          "oklch(84% 0.0042 106.7)",
+          "oklch(95% 0.0015 106.7)"
+        ]
+      },
+      "mute-2": {
+        "role": "neutral",
+        "displayName": "Mute 2",
+        "tonalRamp": [
+          "oklch(15% 0.0035 106.7)",
+          "oklch(26% 0.0065 106.7)",
+          "oklch(38% 0.0091 106.7)",
+          "oklch(49% 0.0101 106.7)",
+          "oklch(61% 0.0101 106.7)",
+          "oklch(72% 0.0086 106.7)",
+          "oklch(84% 0.0055 106.7)",
+          "oklch(95% 0.0020 106.7)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "tonalRamp": [
+          "oklch(15% 0.0012 106.6)",
+          "oklch(26% 0.0023 106.6)",
+          "oklch(38% 0.0032 106.6)",
+          "oklch(49% 0.0035 106.6)",
+          "oklch(61% 0.0035 106.6)",
+          "oklch(72% 0.0030 106.6)",
+          "oklch(84% 0.0019 106.6)",
+          "oklch(95% 0.0007 106.6)"
+        ]
+      },
+      "hair": {
+        "role": "neutral",
+        "displayName": "Hair",
+        "tonalRamp": [
+          "oklch(15% 0.0033 106.6)",
+          "oklch(26% 0.0062 106.6)",
+          "oklch(38% 0.0086 106.6)",
+          "oklch(49% 0.0095 106.6)",
+          "oklch(61% 0.0095 106.6)",
+          "oklch(72% 0.0081 106.6)",
+          "oklch(84% 0.0052 106.6)",
+          "oklch(95% 0.0019 106.6)"
+        ]
+      },
+      "tint": {
+        "role": "neutral",
+        "displayName": "Tint",
+        "tonalRamp": [
+          "oklch(15% 0.0033 106.6)",
+          "oklch(26% 0.0061 106.6)",
+          "oklch(38% 0.0085 106.6)",
+          "oklch(49% 0.0094 106.6)",
+          "oklch(61% 0.0094 106.6)",
+          "oklch(72% 0.0080 106.6)",
+          "oklch(84% 0.0052 106.6)",
+          "oklch(95% 0.0019 106.6)"
+        ]
+      },
+      "dot": {
+        "role": "neutral",
+        "displayName": "Dot",
+        "tonalRamp": [
+          "oklch(15% 0.0010 106.0)",
+          "oklch(26% 0.0020 106.0)",
+          "oklch(38% 0.0027 106.0)",
+          "oklch(49% 0.0030 106.0)",
+          "oklch(61% 0.0030 106.0)",
+          "oklch(72% 0.0026 106.0)",
+          "oklch(84% 0.0017 106.0)",
+          "oklch(95% 0.0006 106.0)"
+        ]
+      },
+      "acc": {
+        "role": "primary",
+        "displayName": "Acc",
+        "tonalRamp": [
+          "oklch(15% 0.0023 106.7)",
+          "oklch(26% 0.0043 106.7)",
+          "oklch(38% 0.0059 106.7)",
+          "oklch(49% 0.0065 106.7)",
+          "oklch(61% 0.0065 106.7)",
+          "oklch(72% 0.0056 106.7)",
+          "oklch(84% 0.0036 106.7)",
+          "oklch(95% 0.0013 106.7)"
+        ]
+      },
+      "acc-ink": {
+        "role": "primary",
+        "displayName": "Acc Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0019 106.5)",
+          "oklch(26% 0.0034 106.5)",
+          "oklch(38% 0.0048 106.5)",
+          "oklch(49% 0.0053 106.5)",
+          "oklch(61% 0.0053 106.5)",
+          "oklch(72% 0.0045 106.5)",
+          "oklch(84% 0.0029 106.5)",
+          "oklch(95% 0.0011 106.5)"
+        ]
+      },
+      "acc-mute": {
+        "role": "primary",
+        "displayName": "Acc Mute",
+        "tonalRamp": [
+          "oklch(15% 0.0034 106.6)",
+          "oklch(26% 0.0064 106.6)",
+          "oklch(38% 0.0088 106.6)",
+          "oklch(49% 0.0098 106.6)",
+          "oklch(61% 0.0098 106.6)",
+          "oklch(72% 0.0083 106.6)",
+          "oklch(84% 0.0054 106.6)",
+          "oklch(95% 0.0020 106.6)"
+        ]
+      },
+      "dark-paper": {
+        "role": "neutral",
+        "displayName": "Dark Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0007 106.6)",
+          "oklch(26% 0.0013 106.6)",
+          "oklch(38% 0.0019 106.6)",
+          "oklch(49% 0.0021 106.6)",
+          "oklch(61% 0.0021 106.6)",
+          "oklch(72% 0.0018 106.6)",
+          "oklch(84% 0.0011 106.6)",
+          "oklch(95% 0.0004 106.6)"
+        ]
+      },
+      "dark-paper-2": {
+        "role": "neutral",
+        "displayName": "Dark Paper 2",
+        "tonalRamp": [
+          "oklch(15% 0.0007 106.6)",
+          "oklch(26% 0.0013 106.6)",
+          "oklch(38% 0.0018 106.6)",
+          "oklch(49% 0.0020 106.6)",
+          "oklch(61% 0.0020 106.6)",
+          "oklch(72% 0.0017 106.6)",
+          "oklch(84% 0.0011 106.6)",
+          "oklch(95% 0.0004 106.6)"
+        ]
+      },
+      "dark-paper-3": {
+        "role": "neutral",
+        "displayName": "Dark Paper 3",
+        "tonalRamp": [
+          "oklch(15% 0.0007 106.6)",
+          "oklch(26% 0.0012 106.6)",
+          "oklch(38% 0.0017 106.6)",
+          "oklch(49% 0.0019 106.6)",
+          "oklch(61% 0.0019 106.6)",
+          "oklch(72% 0.0016 106.6)",
+          "oklch(84% 0.0010 106.6)",
+          "oklch(95% 0.0004 106.6)"
+        ]
+      },
+      "dark-ink": {
+        "role": "neutral",
+        "displayName": "Dark Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0028 106.6)",
+          "oklch(26% 0.0052 106.6)",
+          "oklch(38% 0.0072 106.6)",
+          "oklch(49% 0.0080 106.6)",
+          "oklch(61% 0.0080 106.6)",
+          "oklch(72% 0.0068 106.6)",
+          "oklch(84% 0.0044 106.6)",
+          "oklch(95% 0.0016 106.6)"
+        ]
+      },
+      "dark-ink-2": {
+        "role": "neutral",
+        "displayName": "Dark Ink 2",
+        "tonalRamp": [
+          "oklch(15% 0.0034 106.6)",
+          "oklch(26% 0.0062 106.6)",
+          "oklch(38% 0.0086 106.6)",
+          "oklch(49% 0.0096 106.6)",
+          "oklch(61% 0.0096 106.6)",
+          "oklch(72% 0.0081 106.6)",
+          "oklch(84% 0.0053 106.6)",
+          "oklch(95% 0.0019 106.6)"
+        ]
+      },
+      "dark-mute": {
+        "role": "neutral",
+        "displayName": "Dark Mute",
+        "tonalRamp": [
+          "oklch(15% 0.0036 106.7)",
+          "oklch(26% 0.0067 106.7)",
+          "oklch(38% 0.0092 106.7)",
+          "oklch(49% 0.0102 106.7)",
+          "oklch(61% 0.0102 106.7)",
+          "oklch(72% 0.0087 106.7)",
+          "oklch(84% 0.0056 106.7)",
+          "oklch(95% 0.0020 106.7)"
+        ]
+      },
+      "dark-mute-2": {
+        "role": "neutral",
+        "displayName": "Dark Mute 2",
+        "tonalRamp": [
+          "oklch(15% 0.0027 106.7)",
+          "oklch(26% 0.0051 106.7)",
+          "oklch(38% 0.0071 106.7)",
+          "oklch(49% 0.0079 106.7)",
+          "oklch(61% 0.0079 106.7)",
+          "oklch(72% 0.0067 106.7)",
+          "oklch(84% 0.0043 106.7)",
+          "oklch(95% 0.0016 106.7)"
+        ]
+      },
+      "dark-line": {
+        "role": "neutral",
+        "displayName": "Dark Line",
+        "tonalRamp": [
+          "oklch(15% 0.0031 106.6)",
+          "oklch(26% 0.0057 106.6)",
+          "oklch(38% 0.0079 106.6)",
+          "oklch(49% 0.0088 106.6)",
+          "oklch(61% 0.0088 106.6)",
+          "oklch(72% 0.0075 106.6)",
+          "oklch(84% 0.0048 106.6)",
+          "oklch(95% 0.0018 106.6)"
+        ]
+      },
+      "dark-hair": {
+        "role": "neutral",
+        "displayName": "Dark Hair",
+        "tonalRamp": [
+          "oklch(15% 0.0019 106.7)",
+          "oklch(26% 0.0035 106.7)",
+          "oklch(38% 0.0048 106.7)",
+          "oklch(49% 0.0053 106.7)",
+          "oklch(61% 0.0053 106.7)",
+          "oklch(72% 0.0045 106.7)",
+          "oklch(84% 0.0029 106.7)",
+          "oklch(95% 0.0011 106.7)"
+        ]
+      },
+      "dark-tint": {
+        "role": "neutral",
+        "displayName": "Dark Tint",
+        "tonalRamp": [
+          "oklch(15% 0.0019 106.8)",
+          "oklch(26% 0.0036 106.8)",
+          "oklch(38% 0.0050 106.8)",
+          "oklch(49% 0.0055 106.8)",
+          "oklch(61% 0.0055 106.8)",
+          "oklch(72% 0.0047 106.8)",
+          "oklch(84% 0.0030 106.8)",
+          "oklch(95% 0.0011 106.8)"
+        ]
+      },
+      "dark-dot": {
+        "role": "neutral",
+        "displayName": "Dark Dot",
+        "tonalRamp": [
+          "oklch(15% 0.0010 106.0)",
+          "oklch(26% 0.0020 106.0)",
+          "oklch(38% 0.0027 106.0)",
+          "oklch(49% 0.0030 106.0)",
+          "oklch(61% 0.0030 106.0)",
+          "oklch(72% 0.0026 106.0)",
+          "oklch(84% 0.0017 106.0)",
+          "oklch(95% 0.0006 106.0)"
+        ]
+      },
+      "dark-acc": {
+        "role": "primary",
+        "displayName": "Dark Acc",
+        "tonalRamp": [
+          "oklch(15% 0.0034 106.6)",
+          "oklch(26% 0.0064 106.6)",
+          "oklch(38% 0.0088 106.6)",
+          "oklch(49% 0.0098 106.6)",
+          "oklch(61% 0.0098 106.6)",
+          "oklch(72% 0.0083 106.6)",
+          "oklch(84% 0.0054 106.6)",
+          "oklch(95% 0.0020 106.6)"
+        ]
+      },
+      "dark-acc-ink": {
+        "role": "primary",
+        "displayName": "Dark Acc Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0007 106.6)",
+          "oklch(26% 0.0013 106.6)",
+          "oklch(38% 0.0018 106.6)",
+          "oklch(49% 0.0020 106.6)",
+          "oklch(61% 0.0020 106.6)",
+          "oklch(72% 0.0017 106.6)",
+          "oklch(84% 0.0011 106.6)",
+          "oklch(95% 0.0004 106.6)"
+        ]
+      },
+      "dark-acc-mute": {
+        "role": "primary",
+        "displayName": "Dark Acc Mute",
+        "tonalRamp": [
+          "oklch(15% 0.0028 106.7)",
+          "oklch(26% 0.0051 106.7)",
+          "oklch(38% 0.0071 106.7)",
+          "oklch(49% 0.0079 106.7)",
+          "oklch(61% 0.0079 106.7)",
+          "oklch(72% 0.0067 106.7)",
+          "oklch(84% 0.0043 106.7)",
+          "oklch(95% 0.0016 106.7)"
+        ]
+      },
+      "sig-red": {
+        "role": "secondary",
+        "displayName": "Sig Red",
+        "tonalRamp": [
+          "oklch(15% 0.0490 23.0)",
+          "oklch(26% 0.0910 23.0)",
+          "oklch(38% 0.1260 23.0)",
+          "oklch(49% 0.1400 23.0)",
+          "oklch(61% 0.1400 23.0)",
+          "oklch(72% 0.1190 23.0)",
+          "oklch(84% 0.0770 23.0)",
+          "oklch(95% 0.0280 23.0)"
+        ]
+      },
+      "sig-orange": {
+        "role": "secondary",
+        "displayName": "Sig Orange",
+        "tonalRamp": [
+          "oklch(15% 0.0490 45.0)",
+          "oklch(26% 0.0910 45.0)",
+          "oklch(38% 0.1260 45.0)",
+          "oklch(49% 0.1400 45.0)",
+          "oklch(61% 0.1400 45.0)",
+          "oklch(72% 0.1190 45.0)",
+          "oklch(84% 0.0770 45.0)",
+          "oklch(95% 0.0280 45.0)"
+        ]
+      },
+      "sig-yellow": {
+        "role": "secondary",
+        "displayName": "Sig Yellow",
+        "tonalRamp": [
+          "oklch(15% 0.0490 84.4)",
+          "oklch(26% 0.0910 84.4)",
+          "oklch(38% 0.1260 84.4)",
+          "oklch(49% 0.1400 84.4)",
+          "oklch(61% 0.1400 84.4)",
+          "oklch(72% 0.1190 84.4)",
+          "oklch(84% 0.0770 84.4)",
+          "oklch(95% 0.0280 84.4)"
+        ]
+      },
+      "sig-green": {
+        "role": "secondary",
+        "displayName": "Sig Green",
+        "tonalRamp": [
+          "oklch(15% 0.0465 157.7)",
+          "oklch(26% 0.0864 157.7)",
+          "oklch(38% 0.1196 157.7)",
+          "oklch(49% 0.1329 157.7)",
+          "oklch(61% 0.1329 157.7)",
+          "oklch(72% 0.1129 157.7)",
+          "oklch(84% 0.0731 157.7)",
+          "oklch(95% 0.0266 157.7)"
+        ]
+      },
+      "sig-blue": {
+        "role": "secondary",
+        "displayName": "Sig Blue",
+        "tonalRamp": [
+          "oklch(15% 0.0490 251.8)",
+          "oklch(26% 0.0910 251.8)",
+          "oklch(38% 0.1260 251.8)",
+          "oklch(49% 0.1400 251.8)",
+          "oklch(61% 0.1400 251.8)",
+          "oklch(72% 0.1190 251.8)",
+          "oklch(84% 0.0770 251.8)",
+          "oklch(95% 0.0280 251.8)"
+        ]
+      },
+      "sig-purple": {
+        "role": "secondary",
+        "displayName": "Sig Purple",
+        "tonalRamp": [
+          "oklch(15% 0.0490 305.9)",
+          "oklch(26% 0.0910 305.9)",
+          "oklch(38% 0.1260 305.9)",
+          "oklch(49% 0.1400 305.9)",
+          "oklch(61% 0.1400 305.9)",
+          "oklch(72% 0.1190 305.9)",
+          "oklch(84% 0.0770 305.9)",
+          "oklch(95% 0.0280 305.9)"
+        ]
+      },
+      "sig-gray": {
+        "role": "secondary",
+        "displayName": "Sig Gray",
+        "tonalRamp": [
+          "oklch(15% 0.0058 277.7)",
+          "oklch(26% 0.0107 277.7)",
+          "oklch(38% 0.0148 277.7)",
+          "oklch(49% 0.0165 277.7)",
+          "oklch(61% 0.0165 277.7)",
+          "oklch(72% 0.0140 277.7)",
+          "oklch(84% 0.0090 277.7)",
+          "oklch(95% 0.0033 277.7)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Authentication headline and identity."
+      },
+      "body": {
+        "displayName": "Reading body",
+        "purpose": "Mail prose and compose editor."
+      },
+      "label": {
+        "displayName": "Window chrome",
+        "purpose": "Compact uppercase controls and title bars."
+      },
+      "counter": {
+        "displayName": "Dotted numerals",
+        "purpose": "Unread counts and status figures."
+      }
+    },
+    "shadows": [
+      {
+        "name": "button-hover",
+        "value": "2px 2px 0 var(--line)",
+        "purpose": "Interactive button lift."
+      },
+      {
+        "name": "input-focus",
+        "value": "3px 3px 0 var(--acc)",
+        "purpose": "Focused framed field."
+      },
+      {
+        "name": "floating-window",
+        "value": "5px 5px 0 var(--line)",
+        "purpose": "Floating windows and expanded reply."
+      },
+      {
+        "name": "drag-phone-action",
+        "value": "4px 4px 0 var(--line)",
+        "purpose": "Drag ghost and phone compose action."
+      }
+    ],
+    "motion": [
+      {
+        "name": "snap",
+        "value": "80ms",
+        "purpose": "Button hover and press."
+      },
+      {
+        "name": "quick",
+        "value": "140ms",
+        "purpose": "Short state transitions."
+      },
+      {
+        "name": "base",
+        "value": "200ms",
+        "purpose": "Base feedback."
+      },
+      {
+        "name": "window",
+        "value": "220ms",
+        "purpose": "Window reveal."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.2,.8,.2,1)",
+        "purpose": "Short spatial transitions."
+      },
+      {
+        "name": "step",
+        "value": "steps(4,end)",
+        "purpose": "Window reveal and pixel state changes."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone-max",
+        "value": "760px"
+      },
+      {
+        "name": "intermediate-max",
+        "value": "1200px"
+      },
+      {
+        "name": "wide-auth-min",
+        "value": "1800px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Inverted main action.",
+      "html": "<button class=\"ds-primary\">Send</button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:1.5px solid var(--line,#2E2E2C);font:500 11.5px/1 var(--f-mono,'IBM Plex Mono',monospace);text-transform:uppercase;letter-spacing:.05em;cursor:pointer;border-radius:0;transition:transform 80ms cubic-bezier(.2,.8,.2,1),box-shadow 80ms cubic-bezier(.2,.8,.2,1);background:var(--acc,#4A4A46);color:var(--acc-ink,#F3F3EF);border-color:var(--acc,#4A4A46)}.ds-primary:hover{box-shadow:2px 2px 0 var(--line,#2E2E2C);transform:translate(-1px,-1px)}.ds-primary:active{box-shadow:none;transform:translate(1px,1px)}.ds-primary:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Framed secondary action.",
+      "html": "<button class=\"ds-secondary\">Archive</button>",
+      "css": ".ds-secondary{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:1.5px solid var(--line,#2E2E2C);font:500 11.5px/1 var(--f-mono,'IBM Plex Mono',monospace);text-transform:uppercase;letter-spacing:.05em;cursor:pointer;border-radius:0;transition:transform 80ms cubic-bezier(.2,.8,.2,1),box-shadow 80ms cubic-bezier(.2,.8,.2,1);background:var(--paper-3,#FCFCFA);color:var(--ink,#141413)}.ds-secondary:hover{box-shadow:2px 2px 0 var(--line,#2E2E2C);transform:translate(-1px,-1px)}.ds-secondary:active{box-shadow:none;transform:translate(1px,1px)}.ds-secondary:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}@media(prefers-reduced-motion:reduce){.ds-secondary{transition:none}}"
+    },
+    {
+      "name": "Quiet button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Low-emphasis toolbar action.",
+      "html": "<button class=\"ds-quiet\">Cancel</button>",
+      "css": ".ds-quiet{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:1.5px solid var(--line,#2E2E2C);font:500 11.5px/1 var(--f-mono,'IBM Plex Mono',monospace);text-transform:uppercase;letter-spacing:.05em;cursor:pointer;border-radius:0;transition:transform 80ms cubic-bezier(.2,.8,.2,1),box-shadow 80ms cubic-bezier(.2,.8,.2,1);background:transparent;color:var(--ink,#141413);border-color:transparent}.ds-quiet:hover{background:var(--tint,#E1E1DA)}.ds-quiet:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}@media(prefers-reduced-motion:reduce){.ds-quiet{transition:none}}"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Framed input with a hard focus shadow.",
+      "html": "<label class=\"ds-field\"><span>Email</span><input type=\"email\" placeholder=\"you@icloud.com\"></label>",
+      "css": ".ds-field{display:grid;gap:6px;color:var(--ink,#141413);font:400 14px var(--f-mono,'IBM Plex Mono',monospace)}.ds-field>span{font:500 10.5px/1 var(--f-mono,'IBM Plex Mono',monospace);letter-spacing:.06em;text-transform:uppercase;color:var(--mute,#6A6A65)}.ds-field input{height:36px;padding:0 10px;border:1.5px solid var(--line,#2E2E2C);border-radius:0;background:var(--paper-3,#FCFCFA);color:inherit;font:inherit}.ds-field input:hover{border-color:var(--ink,#141413)}.ds-field input:focus{box-shadow:3px 3px 0 var(--acc,#4A4A46)}.ds-field input:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}"
+    },
+    {
+      "name": "Folder navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "Current folder inversion with a Doto count.",
+      "html": "<nav aria-label=\"Mailboxes\" class=\"ds-nav\"><button aria-current=\"page\">Inbox <span>2</span></button><button>Archive</button></nav>",
+      "css": ".ds-nav{font:400 12.5px/1 var(--f-mono,'IBM Plex Mono',monospace)}.ds-nav button{display:flex;align-items:center;gap:7px;width:100%;height:26px;padding:0 10px;background:var(--paper-2,#F3F3EF);color:var(--ink,#141413);border:0;text-align:left;font:inherit;cursor:pointer}.ds-nav button:hover{background:var(--tint,#E1E1DA)}.ds-nav button[aria-current]{background:var(--acc,#4A4A46);color:var(--acc-ink,#F3F3EF)}.ds-nav span{margin-left:auto;font:900 14px/1 var(--f-dot,Doto,monospace)}.ds-nav button:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}"
+    },
+    {
+      "name": "Search chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Removable square search token.",
+      "html": "<button class=\"ds-chip\" aria-label=\"Remove from:priya\">from:priya \u00d7</button>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 7px;border:1px solid var(--line,#2E2E2C);border-radius:0;background:var(--paper-3,#FCFCFA);color:var(--ink,#141413);font:400 12px/1 var(--f-mono,'IBM Plex Mono',monospace);cursor:pointer}.ds-chip:hover{background:var(--tint,#E1E1DA)}.ds-chip:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}"
+    },
+    {
+      "name": "Active window",
+      "kind": "card",
+      "refersTo": "window",
+      "description": "Striped active title over framed paper.",
+      "html": "<section class=\"ds-window\"><div class=\"ds-title\">MESSAGE_VIEWER<span></span></div><div class=\"ds-content\">Reading paper</div></section>",
+      "css": ".ds-window{border:1.5px solid var(--line,#2E2E2C);background:var(--paper-2,#F3F3EF);color:var(--ink,#141413)}.ds-title{display:flex;align-items:center;gap:8px;height:26px;padding:0 9px;border-bottom:1.5px solid var(--line,#2E2E2C);background:var(--acc,#4A4A46);color:var(--acc-ink,#F3F3EF);font:500 11.5px/1 var(--f-mono,'IBM Plex Mono',monospace);letter-spacing:.05em}.ds-title span{height:11px;flex:1;background:repeating-linear-gradient(to bottom,currentColor 0 1px,transparent 1px 3px)}.ds-content{padding:22px;font:400 15px/1.65 var(--f-sans,\"IBM Plex Sans\",sans-serif)}"
+    },
+    {
+      "name": "Message row",
+      "kind": "custom",
+      "refersTo": "message-row",
+      "description": "Unread conversation with square marker and a two-line summary.",
+      "html": "<button class=\"ds-row\"><span class=\"ds-unread\"></span><span class=\"ds-sender\">Priya<span class=\"ds-time\">07:45 AM</span></span><span class=\"ds-summary\"><b>Workshop dates</b> \u00b7 November works for me</span></button>",
+      "css": ".ds-row{display:grid;grid-template-columns:22px 1fr;width:100%;height:60px;padding:9px 12px 9px 8px;border:0;border-bottom:1px solid var(--hair,#D0D0C9);background:var(--paper-2,#F3F3EF);color:var(--ink,#141413);text-align:left;cursor:pointer}.ds-row:hover{background:var(--tint,#E1E1DA)}.ds-unread{width:7px;height:7px;grid-row:1/3;margin:4px auto 0;background:var(--ink,#141413)}.ds-sender{font:700 13px/1.2 var(--f-mono,'IBM Plex Mono',monospace)}.ds-time{float:right;font:400 11.5px/1 var(--f-mono,'IBM Plex Mono',monospace);color:var(--mute,#6A6A65)}.ds-summary{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:400 13.5px/1.45 var(--f-sans,\"IBM Plex Sans\",sans-serif);color:var(--mute,#6A6A65)}.ds-summary b{font-weight:600;color:var(--ink,#141413)}.ds-row:focus-visible{outline:2px solid var(--acc,#4A4A46);outline-offset:2px}"
+    },
+    {
+      "name": "Barcode progress",
+      "kind": "custom",
+      "refersTo": "progress",
+      "description": "Framed striped progress fill.",
+      "html": "<div class=\"ds-progress\" role=\"progressbar\" aria-label=\"Import\" aria-valuemin=\"0\" aria-valuemax=\"100\" aria-valuenow=\"60\"><span></span></div>",
+      "css": ".ds-progress{height:22px;padding:2px;border:1.5px solid var(--line,#2E2E2C);background:var(--paper-3,#FCFCFA)}.ds-progress span{display:block;height:100%;width:60%;background:repeating-linear-gradient(90deg,var(--ink,#141413) 0 6px,transparent 6px 7px,var(--ink,#141413) 7px 10px,transparent 10px 12px,var(--ink,#141413) 12px 17px,transparent 17px 18px)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Terminal Mail",
+    "overview": "A paper-and-graphite mail workstation with tiled windows, crisp bitmap chrome, and compact technical labels. Reading and composition use open, readable text areas inside the same framed structure. The visual authority is the user-selected native HTML specification, `docs/design/web-client.html` (artifact `mx4gywdnv23g`, version 3).\n\nThis records the shipped implementation in `web/src/style.css`, `design.js`, `views.js`, and `fonts.css`, checked against final desktop, phone reader, and phone compose captures in `.impeccable/review/`. The source CSS remains the authority for theme overrides and responsive state combinations.",
+    "keyCharacteristics": [
+      "Square windows with thin frames, striped active titles, and compact controls.",
+      "Monochrome state inversion; optional signal colors only for mail flags.",
+      "Pixel display type and icons paired with readable mail text.",
+      "Crop marks, dither fills, barcode progress, and short stepped motion."
+    ],
+    "rules": [
+      {
+        "name": "The Inversion Rule",
+        "body": "Active states use the paired accent background and accent ink; secondary text inside them uses accent muted ink.",
+        "section": "colors"
+      },
+      {
+        "name": "The Reading Rule",
+        "body": "Keep display lettering in headlines and identity; use Sans for message prose and Mono for interface chrome and structured metadata.",
+        "section": "typography"
+      },
+      {
+        "name": "The Window Rule",
+        "body": "Use framed paper surfaces for persistent panes and hard offset shadows for floating or interactive elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** pair accent, accent ink, and accent muted ink for every selected state.",
+      "**Do** preserve square frames, inline bitmap SVG icons, and the existing paper hierarchy.",
+      "**Do** keep long mail prose readable with the body role and the existing line-length cap.",
+      "**Do** honor phone safe areas, pane visibility, keyboard focus, and reduced-motion preferences."
+    ],
+    "donts": [
+      "**Don't** spread opt-in flag colors across primary actions or navigation.",
+      "**Don't** replace the established square windows with rounded cards or blurred floating shadows.",
+      "**Don't** use Silkscreen for long message bodies or substitute Unicode symbols for the bitmap icon set.",
+      "**Don't** turn faint metadata colors or tiny decorative text into general-purpose reading styles."
+    ]
+  }
+}

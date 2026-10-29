@@ -1,0 +1,12 @@
+# Agentpack project manifest — direct dependencies only. Run `agentpack lock` to refresh pack.lock.
+
+name = "mcp-icloud-email"
+version = "0.0.1"
+
+[dependencies]
+"github.com/olegpustovit/agent-configs/mcps/playwright" = "dev"
+"github.com/olegpustovit/agent-configs/drafts/build-go-stack" = "dev"
+"github.com/dietrichgebert/ponytail" = {}
+"github.com/olegpustovit/agent-configs/skills/smdctl-deploy" = "dev"
+"github.com/pbakaus/impeccable" = {}
+# "github.com/owner/repo/path" = {}

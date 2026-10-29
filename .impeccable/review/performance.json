@@ -1,0 +1,39 @@
+{
+  "messages": 50000,
+  "firstWindowMS": 122.10000000149012,
+  "hydrateMS": 969.6999999992549,
+  "queries": [
+    {
+      "search": "",
+      "ms": 163.19999999925494,
+      "total": 5000
+    },
+    {
+      "search": "needle",
+      "ms": 100,
+      "total": 5556,
+      "workerMS": 97
+    },
+    {
+      "search": "from:sender7",
+      "ms": 76,
+      "total": 3000,
+      "workerMS": 74
+    },
+    {
+      "search": "subject:\"Build report\"",
+      "ms": 165.79999999701977,
+      "total": 25000,
+      "workerMS": 158
+    },
+    {
+      "search": "needle",
+      "ms": 84,
+      "total": 5556,
+      "workerMS": 82
+    }
+  ],
+  "keyPaintP95MS": 12.899999998509884,
+  "cachedBodyMS": 5.199999999254942,
+  "mountedRows": 25
+}

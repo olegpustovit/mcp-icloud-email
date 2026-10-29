@@ -43,6 +43,8 @@ type Record struct {
 	Challenge string    `bson:"challenge,omitempty"`
 	Resource  string    `bson:"resource,omitempty"`
 	Family    string    `bson:"family,omitempty"`
+	Created   time.Time `bson:"created,omitempty"`
+	LastUsed  time.Time `bson:"last_used,omitempty"`
 }
 type Account struct {
 	Email       string `bson:"_id"`
@@ -106,7 +108,19 @@ func New(ctx context.Context, c Config) (*Service, error) {
 	return s, nil
 }
 func (s *Service) Close(ctx context.Context) error { return s.client.Disconnect(ctx) }
+
+func (s *Service) PendingVerification(ctx context.Context, email string) (Record, error) {
+	var record Record
+	err := s.db.Collection("auth").FindOne(ctx, bson.M{"kind": "verify", "email": email, "expires": bson.M{"$gt": time.Now()}}, options.FindOne().SetSort(bson.D{{Key: "expires", Value: -1}})).Decode(&record)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return record, ErrUnauthorized
+	}
+	return record, err
+}
 func (s *Service) Put(ctx context.Context, r Record) error {
+	if r.Created.IsZero() {
+		r.Created = time.Now().UTC()
+	}
 	_, e := s.db.Collection("auth").InsertOne(ctx, r)
 	return e
 }
@@ -176,22 +190,50 @@ func (s *Service) Credentials(ctx context.Context, email string) (string, string
 	return a.ICloudEmail, string(p), e
 }
 
+func (s *Service) ConnectedOwners(ctx context.Context) ([]string, error) {
+	rows, err := s.db.Collection("accounts").Find(ctx, bson.M{"secret": bson.M{"$type": "binData"}}, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close(ctx) }()
+	var accounts []Account
+	if err = rows.All(ctx, &accounts); err != nil {
+		return nil, err
+	}
+	owners := make([]string, len(accounts))
+	for i, account := range accounts {
+		owners[i] = account.Email
+	}
+	return owners, nil
+}
+
 func ConfigFromEnv() Config {
 	return Config{BaseURL: strings.TrimRight(os.Getenv("MAIL_BASE_URL"), "/"), MongoURI: os.Getenv("MAIL_MONGODB_URI"), EncryptionKey: os.Getenv("MAIL_ENCRYPTION_KEY"), ResendAPIKey: os.Getenv("MAIL_RESEND_API_KEY"), EmailFrom: os.Getenv("MAIL_EMAIL_FROM")}
 }
 func (s *Service) Authenticate(r *http.Request) (string, error) {
+	email, _, err := s.AuthenticateClient(r)
+	return email, err
+}
+func (s *Service) AuthenticateClient(r *http.Request) (string, string, error) {
 	parts := strings.Split(r.Header.Get("Authorization"), " ")
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
-		return "", ErrUnauthorized
+		return "", "", ErrUnauthorized
 	}
 	rec, e := s.Get(r.Context(), parts[1], "access", false)
 	if e != nil {
-		return "", e
+		return "", "", e
 	}
 	if !Allowed(rec.Email) || rec.Resource != s.Config.BaseURL+"/mcp" {
-		return "", ErrUnauthorized
+		return "", "", ErrUnauthorized
 	}
-	return rec.Email, nil
+	result, err := s.db.Collection("auth").UpdateOne(r.Context(), bson.M{"_id": rec.ID, "kind": "access"}, bson.M{"$set": bson.M{"last_used": time.Now().UTC()}})
+	if err != nil {
+		return "", "", err
+	}
+	if result.MatchedCount == 0 {
+		return "", "", ErrUnauthorized
+	}
+	return rec.Email, "mcp:" + rec.ClientID, nil
 }
 
 type User struct {

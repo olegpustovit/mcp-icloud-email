@@ -30,6 +30,11 @@ go.work
 .DS_Store
 Thumbs.db
 docs/
+!docs/
+docs/*
+!docs/design/
+docs/design/*
+!docs/design/web-client.html
 
 mail-server
 .env.*
