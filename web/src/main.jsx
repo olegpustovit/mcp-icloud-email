@@ -3,6 +3,7 @@ import {wantsNotification} from './notifications.js'
 import {keyBindings,keyStroke,bindingConflict} from './keyboard.js'
 import './style.css'
 import { request, setOwner, downloadAttachment, attachmentBlob, proxyImage } from './api.js'
+import {winOp,unmax,layout,shouldSnap,clampGeo,loadWins,saveWins,WINS} from './windows.js'
 import { authView, connectView, syncView, mailView, messageRows, paintSelection, paletteItems } from './views.js'
 import {revealRow} from './list-window.js'
 import {readerFonts} from './reader-fonts.js'
@@ -15,7 +16,7 @@ import {morph} from './morph.js'
 
 const root=document.getElementById('root')
 const params=new URLSearchParams(location.search)
-const s={account:null,mode:params.has('reset_token')?'reset':'login',authEmail:'',authPassword:'',icloudEmail:'',busy:false,error:'',notice:params.get('verified')==='1'?'Email verified. Sign in to continue.':params.get('error')==='verification'?'That verification link is invalid or expired. Register again for a fresh link.':'',view:'mail',tab:'account',folder:'inbox',folders:[],msgs:[],total:0,counts:{},prefs:{},bodies:{},cur:0,picked:[],filter:'all',search:'',q:'',focus:'list',overlay:null,pal:'',palI:0,pickI:0,pickQuery:'',chord:null,compose:null,draft:null,draftStatus:'',loading:false,sending:false,bodyError:'',pending:0,offline:!navigator.onLine,side:true,max:false,mobilePane:'list',signal:localStorage.getItem('mail.signal')==='true',theme:localStorage.getItem('mail.theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
+const s={account:null,mode:params.has('reset_token')?'reset':'login',authEmail:'',authPassword:'',icloudEmail:'',busy:false,error:'',notice:params.get('verified')==='1'?'Email verified. Sign in to continue.':params.get('error')==='verification'?'That verification link is invalid or expired. Register again for a fresh link.':'',view:'mail',tab:'account',folder:'inbox',folders:[],msgs:[],total:0,counts:{},prefs:{},bodies:{},cur:0,picked:[],filter:'all',search:'',q:'',focus:'list',overlay:null,pal:'',palI:0,pickI:0,pickQuery:'',chord:null,compose:null,draft:null,draftStatus:'',loading:false,sending:false,bodyError:'',pending:0,offline:!navigator.onLine,...loadWins(),desktop:matchMedia('(min-width:761px)').matches,mobilePane:'list',signal:localStorage.getItem('mail.signal')==='true',theme:localStorage.getItem('mail.theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
 let replica=null,replicaAccount=''
 let folderGeneration=0, toastTimer, countdownTimer, chordTimer, draftTimer,searchTimer
 let undoStack=[]
@@ -36,6 +37,8 @@ root.addEventListener('scroll',event=>{
   listFrame=requestAnimationFrame(()=>{if(list.isConnected&&!pointerBusy)morph(list,messageRows(s))})
 },true)
 
+const setWin=(w,op)=>{s.wins=winOp(s.wins,w,op);saveWins(s)}
+matchMedia('(min-width:761px)').addEventListener('change',e=>{s.desktop=e.matches;draw()})
 function draw() {
   if(pointerBusy){drawPending=true;return}
   drawPending=false
@@ -375,6 +378,7 @@ async function act(action){
   if(action.startsWith('edit-key:')){s.keyEdit=action.slice(9);draw();return}
   if(action.startsWith('auth:')){s.mode=action.slice(5);s.error='';s.notice='';s.authPassword='';draw();return}
   if(action.startsWith('cancel-send:')){try{const draft=await request('/api/mail/outbox/'+encodeURIComponent(action.slice(12)),{method:'DELETE',body:'{}'});await restoreDraft(draft);s.compose='float';s.overlay=null;await loadOutbox();say('SEND CANCELLED // DRAFT RESTORED')}catch(err){say(errorText(err),true)}return}
+  if(action.startsWith('win:')){const [,w,op]=action.split(':');setWin(w,op);draw();return}
   if(action.startsWith('go:')){s.view='mail';s.search='';s.q='';replica?.call('cancel-search');s.overlay=null;s.filter='all';await loadFolder(action.slice(3));return}
   if(action.startsWith('settings:')){s.view='settings';s.tab=action.slice(9);s.overlay=null;draw();loadSettings(s.tab);return}
   const m=current(s)
@@ -393,7 +397,7 @@ async function act(action){
     case'next':case'prev':s.cur=Math.max(0,Math.min(visible(s).length-1,s.cur+(action==='next'?1:-1)));s.bodyError='';revealRow(visible(s),s);if(s.overlay||s.compose||pointerBusy||!paintSelection(root,s))draw();loadBody();return
     case'open':if(m?.f==='drafts'){await editDraft();return}s.focus='reader';s.mobilePane='reader';if(m?.un)mutate('read',{read:true});break
     case'edit-draft':await editDraft();return
-    case'back':s.focus='list';s.mobilePane='list';s.max=false;break
+    case'back':s.focus='list';s.mobilePane='list';break
     case'archive':case'trash':case'junk':{
       if(action==='trash'&&role(targetFolder(s,s.folder))==='trash'){if(!window.confirm('Permanently delete the selected messages? This cannot be undone.'))return;await mutate('delete',{permanent:true});return}
       const folder=targetFolder(s,action==='trash'?'trash':action)
@@ -447,8 +451,6 @@ async function act(action){
     case'revoke-sessions':try{await request('/api/sessions',{method:'DELETE'});await loadSettings('account');say('OTHER BROWSERS SIGNED OUT')}catch(err){say(errorText(err),true)}return
     case'mail':s.view='mail';s.mobilePane='list';break
     case'relink':s.view='link';s.error='';break
-    case'unside':s.side=true;s.max=false;break
-    case'unmax':s.max=false;break
     case'theme':await savePreference('theme',s.theme==='light'?'dark':'light');return
     case'signal':await savePreference('signal',!s.signal);return
     case'copy-mcp':try{await navigator.clipboard.writeText('https://mail.microapps.space/mcp');say('MCP URL COPIED')}catch{say('Copy this URL: https://mail.microapps.space/mcp',true)}return
@@ -546,8 +548,9 @@ root.addEventListener('click',e=>{
   if(row){s.cur=Number(row.dataset.i);s.bodyError='';if(e.target.closest('.mk')){act('select');return}}
   const thread=e.target.closest('[data-thread-message]');if(thread){const raw=current(s)?.threadMessages?.find(m=>m.key===thread.dataset.threadMessage);if(raw){s.openMessages=s.openMessages||[];s.openMessages=s.openMessages.includes(raw.key)?s.openMessages.filter(key=>key!==raw.key):[...s.openMessages,raw.key];draw();loadBody(false,message(raw,raw.folder))}return}
   const ctl=e.target.closest('[data-ctl-a]')
-  if(ctl){const [op,w]=ctl.dataset.ctlA.split('-');if(w==='auth'){if(op==='max'){s.authMax=!s.authMax;s.authMin=false}else{s.authMin=true;if(op==='close')s.authPassword=''}draw();return}if(w==='compose'){act(op==='max'?'full-compose':'min-compose');return}if(w==='side')s.side=op==='max'?true:false;if(w==='reader'){if(op==='max')s.max=!s.max;else if(op==='close')s.cur=-1;else{s.max=false;s.mobilePane='list'}}if(w==='list'&&op==='max')s.max=false;if(w==='settings')s.view='mail';if(w==='preview'){s.overlay=null}draw();return}
+  if(ctl){const [op,w]=ctl.dataset.ctlA.split('-');if(w==='auth'){if(op==='max'){s.authMax=!s.authMax;s.authMin=false}else{s.authMin=true;if(op==='close')s.authPassword=''}draw();return}if(w==='compose'){act(op==='max'?'full-compose':'min-compose');return}if(WINS.includes(w)){if(s.desktop&&s.view==='mail')setWin(w,{min:'docked',max:'max',close:'collapse'}[op]);else if(w==='reader'){if(op==='close')s.cur=-1;else if(op==='min')s.mobilePane='list'}}if(w==='settings')s.view='mail';if(w==='preview'){s.overlay=null}draw();return}
   const a=e.target.closest('[data-a]');if(a){act(a.dataset.a).catch(err=>say(errorText(err),true));return}
+  const desk=e.target.closest('[data-desk]');if(desk){if(e.detail!==1){if(desk.dataset.desk==='go:inbox')setWin('list','tiled');act(desk.dataset.desk).catch(err=>say(errorText(err),true))}return}
   const folder=e.target.closest('[data-f]');if(folder){act('go:'+folder.dataset.f);return}
   const tab=e.target.closest('[data-tab]');if(tab){s.keyEdit=null;s.tab=tab.dataset.tab;draw();loadSettings(s.tab);return}
   const filter=e.target.closest('[data-filter]');if(filter){s.filter=filter.dataset.filter;s.cur=0;draw();loadFolder(s.folder,false,true);return}
@@ -626,7 +629,7 @@ window.addEventListener('keydown',e=>{
  if(s.compose&&stroke===bindings.send){e.preventDefault();sendDraft();return}
  if(s.compose&&stroke===bindings['full-compose']){e.preventDefault();act('full-compose');return}
  if(stroke===bindings.palette&&(!typing||meta)&&s.overlay!=='palette'){e.preventDefault();act('palette');return}
- if(key==='Escape'){e.preventDefault();if(s.overlay){s.overlay=null}else if(s.compose){s.compose=null}else if(s.view==='settings'){s.view='mail'}else if(s.picked.length){s.picked=[]}else if(s.search){searchMail('')}else{s.mobilePane='list';s.max=false}draw();return}
+ if(key==='Escape'){e.preventDefault();if(s.overlay){s.overlay=null}else if(s.compose){s.compose=null}else if(s.view==='settings'){s.view='mail'}else if(s.picked.length){s.picked=[]}else if(s.search){searchMail('')}else{s.mobilePane='list';s.wins=unmax(s.wins);saveWins(s)}draw();return}
   if(s.overlay==='preview'){if(key==='ArrowLeft'||key==='ArrowRight'||key==='d'){e.preventDefault();act(key==='d'?'preview-download':key==='ArrowLeft'?'preview-prev':'preview-next')}return}
   if(s.overlay==='palette'){
     const options=paletteItems(s)
@@ -639,13 +642,33 @@ window.addEventListener('keydown',e=>{
     if(key==='Enter'||!typing&&/^[1-9]$/.test(key)){e.preventDefault();const value=options[key==='Enter'?s.pickI:Number(key)-1];if(value){if(s.overlay==='snooze')chooseSnooze(value);else choose(value)}}return
   }
   if(typing){if(e.target.id==='sq'&&key==='Enter'){e.preventDefault();s.overlay=null;draw()}return}
- if(s.overlay||s.compose||!stroke)return
+ if(s.overlay||s.compose||!stroke||key==='Enter'&&e.target.closest('[data-desk]'))return // let the focused desktop icon's own click open it
  const sequence=s.chord?s.chord+' '+stroke:stroke,action=Object.entries(bindings).find(([action,value])=>!['send','full-compose','min-compose'].includes(action)&&value===sequence)?.[0]
  if(action){if(s.view!=='mail'&&!['help','palette','search','settings'].includes(action))return;e.preventDefault();clearTimeout(chordTimer);s.chord=null;act(action).catch(err=>say(errorText(err),true));return}
  if(Object.values(bindings).some(binding=>binding.startsWith(sequence+' '))&&s.view==='mail'){e.preventDefault();s.chord=sequence;draw();clearTimeout(chordTimer);chordTimer=setTimeout(()=>{s.chord=null;draw()},900);return}
  if(s.chord){s.chord=null;draw();return}
  if(s.view==='mail'&&!meta&&(key==='ArrowDown'||key==='ArrowUp')){e.preventDefault();act(key==='ArrowDown'?'next':'prev')}
 
+})
+// Dragging a title bar floats the window; drawing is deferred while the pointer is down, so the move writes style directly and commits on release.
+root.addEventListener('pointerdown',e=>{
+  const win=e.target.closest('.panes:not(.set) .wt')?.closest('[data-w]');if(!win||e.button||e.target.closest('button')||!s.desktop||s.view!=='mail')return
+  const w=win.dataset.w,panes=root.querySelector('.panes'),pb=panes.getBoundingClientRect(),r=win.getBoundingClientRect(),box={w:pb.width,h:pb.height},ox=e.clientX-r.left,oy=e.clientY-r.top;let moved=false
+  const move=ev=>{
+    if(!moved){if(Math.hypot(ev.clientX-e.clientX,ev.clientY-e.clientY)<5)return;moved=true
+      if(s.wins[w]!=='floating'){s.geo[w]={x:r.left-pb.left,y:r.top-pb.top,w:r.width,h:r.height};s.wins=winOp(s.wins,w,'floating');pointerBusy=false;draw();pointerBusy=true}}
+    const el=root.querySelector(`[data-w="${w}"]`)?.closest('.flt');if(!el)return
+    const g=s.geo[w]=clampGeo({...s.geo[w],x:ev.clientX-pb.left-ox,y:ev.clientY-pb.top-oy},box);el.style.left=g.x+'px';el.style.top=g.y+'px'
+  }
+  const up=()=>{
+    removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up)
+    if(!moved)return
+    s.suppressClickUntil=Date.now()+300
+    const grid=layout(s.wins).grid,i=WINS.filter(k=>k===w||grid.includes(k)).indexOf(w),kid=[...panes.querySelectorAll(':scope>.win,:scope>.spine')][i]
+    if(shouldSnap(s.geo[w],box,kid?kid.getBoundingClientRect().left-pb.left:-1e9))s.wins=winOp(s.wins,w,'tiled')
+    saveWins(s);pointerBusy=false;draw()
+  }
+  addEventListener('pointermove',move);addEventListener('pointerup',up);addEventListener('pointercancel',up)
 })
 let swipeGesture,dragGhost,dragKeys=[]
 root.addEventListener('pointerdown',event=>{
