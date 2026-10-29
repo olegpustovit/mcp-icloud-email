@@ -3,6 +3,7 @@ package imap
 import (
 	"io"
 	"net"
+	"net/mail"
 	"strings"
 	"testing"
 	"time"
@@ -123,5 +124,16 @@ func TestPartialMIMESnippet(t *testing.T) {
 		if !strings.Contains(got, test.want) || strings.Contains(got, "hide-me") {
 			t.Errorf("snippet=%q want %q", got, test.want)
 		}
+	}
+}
+
+func TestDisplayAddressKeepsUTF8NamesParseable(t *testing.T) {
+	got := displayAddress(`🔳 Turing "Post"`, "news@example.com")
+	if strings.Contains(got, "=?") {
+		t.Fatalf("name was MIME-encoded: %s", got)
+	}
+	parsed, err := mail.ParseAddress(got)
+	if err != nil || parsed.Name != `🔳 Turing "Post"` || parsed.Address != "news@example.com" {
+		t.Fatalf("round trip failed: %q %v", parsed, err)
 	}
 }

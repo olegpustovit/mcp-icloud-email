@@ -70,7 +70,7 @@ func validChoice(value string, choices ...string) bool {
 	return false
 }
 func (p Preferences) validate() error {
-	if !validChoice(p.Theme, "system", "light", "dark") || !validChoice(p.Density, "compact", "default", "comfy") || !validChoice(p.ReadingFont, "sans", "mono") || !validChoice(p.Motion, "system", "full", "reduced") || !validChoice(p.KeyPreset, "gmail", "apple", "custom") || !validChoice(p.Notifications, "all", "vip", "none") || !validChoice(p.RemoteContent, "block", "proxy") {
+	if !validChoice(p.Theme, "system", "light", "dark") || !validChoice(p.Density, "compact", "default", "comfy") || !validChoice(p.ReadingFont, "sans", "mono") || !validChoice(p.Motion, "system", "full", "reduced") || !validChoice(p.KeyPreset, "gmail", "apple", "custom") || !validChoice(p.Notifications, "all", "vip", "none") || !validChoice(p.RemoteContent, "block", "proxy", "original") {
 		return errors.New("invalid preference value")
 	}
 	if p.UndoSeconds != 5 && p.UndoSeconds != 10 && p.UndoSeconds != 20 && p.UndoSeconds != 30 {

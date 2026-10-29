@@ -47,6 +47,8 @@ test('untrusted message and account content cannot escape the UI',()=>{
 test('email frame denies scripts, remote images, forms and base URLs',()=>{
   const html=emailDocument('<p>Hello</p>')
   assert.match(html,/default-src 'none'/);assert.match(html,/img-src data:/);assert.match(html,/form-action 'none'/)
+
+  for(const original of [emailDocument('<p>Hello</p>',true,'sans',{},true)]){assert.match(original,/default-src 'none'/);assert.match(original,/img-src data:/);assert.doesNotMatch(original,/IBM Plex/)}
 })
 test('pending mutations rebase by mailbox identity and leave server rows untouched',()=>{
   const row=message(raw,'INBOX')
@@ -95,4 +97,9 @@ test('global search keeps body matches and ignores the previously selected smart
  assert.equal(visible(state).length,1)
  assert.equal(matches(archived,'to:me@icloud.com'),true)
  assert.equal(matches(archived,'in:all'),true)
+})
+test('sender names decode RFC 2047 words left by older syncs',()=>{
+  assert.equal(message({from:'=?utf-8?q?=F0=9F=94=B3_Turing_Post?= <news@example.com>',date:new Date().toISOString()},'INBOX').who,'🔳 Turing Post')
+  assert.equal(message({from:'"Nico \\"N\\" M" <n@example.com>',date:new Date().toISOString()},'INBOX').who,'Nico "N" M')
+  assert.equal(message({from:'=?bogus?q?x?= <n@example.com>',date:new Date().toISOString()},'INBOX').who,'=?bogus?q?x?=')
 })

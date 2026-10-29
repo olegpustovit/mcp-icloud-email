@@ -9,7 +9,6 @@ import (
 	"io"
 	"mime"
 	"net"
-	"net/mail"
 	"net/textproto"
 	"slices"
 	"strconv"
@@ -237,7 +236,7 @@ func syncEmail(row *imapclient.FetchMessageBuffer, folder string, validity uint3
 		result := []string{}
 		for _, a := range list {
 			if a.Addr() != "" {
-				result = append(result, (&mail.Address{Name: a.Name, Address: a.Addr()}).String())
+				result = append(result, displayAddress(a.Name, a.Addr()))
 			}
 		}
 		return result
@@ -342,4 +341,12 @@ func syncSnippet(header, body []byte) string {
 		return string(runes[:197]) + "…"
 	}
 	return string(runes)
+}
+
+// displayAddress keeps decoded UTF-8 names readable; mail.Address.String re-encodes them as RFC 2047 words.
+func displayAddress(name, address string) string {
+	if name == "" {
+		return address
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name) + `" <` + address + ">"
 }

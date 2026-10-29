@@ -34,10 +34,12 @@ export function replyRecipients(mail,ownAddresses,all=false){
  return {to:(to.length?to:[mail.from]).map(address),cc:(all?[...(self?[]:mail.to||[]),...mail.cc||[]]:[]).filter(value=>{const key=address(value).toLowerCase();if(own.has(key)||seen.has(key))return false;seen.add(key);return true}).map(address)}
 }
 export const recipients=text=>(text||'').match(/(?:"(?:[^"\\]|\\.)*"|[^,;])+/g)?.map(value=>value.trim()).filter(Boolean)||[]
+// Rows synced before the server stopped re-encoding names still carry RFC 2047 words like =?utf-8?q?…?=.
+export const decodeWords=text=>text.replace(/=\?([^?]+)\?([bq])\?([^?]*)\?=(?:\s+(?==\?))?/gi,(word,charset,encoding,data)=>{try{const binary=encoding.toLowerCase()==='b'?atob(data):data.replace(/_/g,' ').replace(/=([0-9a-f]{2})/gi,(_,hex)=>String.fromCharCode(parseInt(hex,16)));return new TextDecoder(charset).decode(Uint8Array.from(binary,char=>char.charCodeAt(0)))}catch{return word}})
 export function message(raw, folder) {
   const date = new Date(raw.date)
   const today = new Date(); today.setHours(0,0,0,0)
-  const who = raw.from?.replace(/\s*<[^>]+>/, '').replace(/^"|"$/g,'') || '(unknown sender)'
+  const who = decodeWords(raw.from?.replace(/\s*<[^>]+>/, '').replace(/^"|"$/g,'').replace(/\\(.)/g,'$1') || '') || '(unknown sender)'
   const wake=role(folder)==='snoozed'?(raw.snoozeUntil?new Date(raw.snoozeUntil):null):undefined
   return { ...raw, uid:raw.id, id:`${folder}|${raw.uidValidity}|${raw.id}`, folder, f:role(folder), who, em:address(raw.from), subj:raw.subject || '(no subject)', snip:raw.snippet || '', un:raw.unread, fl:raw.flagColor || null, att:raw.attachments?.length || 0,
     t:date >= today ? timeFormat.format(date) : dateFormat.format(date),
