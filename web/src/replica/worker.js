@@ -25,7 +25,8 @@ function indexMessage(raw){
   metadata.set(raw.key,raw);indexed.set(raw.key,row)
 }
 function deleteMessage(key){const row=indexed.get(key);if(row)for(const word of row.words){const set=words.get(word);set?.delete(key);if(!set?.size)words.delete(word)};indexed.delete(key);metadata.delete(key)}
-function announce(){clearTimeout(announceTimer);announceTimer=setTimeout(()=>broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs}),35)}
+// Throttle, not debounce: history backfill announces per page, and every mirror makes each tab requery and redraw.
+function announce(){announceTimer??=setTimeout(()=>{announceTimer=null;broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs})},400)}
 async function queueStatus(){const txs=await all('transactions');broadcast({type:'queue',pending:txs.filter(tx=>['pending','awaiting-sync'].includes(tx.status)).length,rejected:txs.filter(tx=>tx.status==='rejected')})}
 async function drain(){if(draining||!db)return;draining=true;let progressed=0;try{progressed=await drainQueue(db,{owner,account},broadcast)}catch(err){broadcast({type:'storage-error',error:err.message})}finally{draining=false}if(progressed&&(await all('transactions')).some(tx=>tx.status==='pending'))setTimeout(drain,0)}
 function localWrite(run){const pending=localWrites.then(run);localWrites=pending.catch(()=>{});return pending}
