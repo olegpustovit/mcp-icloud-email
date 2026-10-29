@@ -378,6 +378,8 @@ async function act(action){
   if(action.startsWith('edit-key:')){s.keyEdit=action.slice(9);draw();return}
   if(action.startsWith('auth:')){s.mode=action.slice(5);s.error='';s.notice='';s.authPassword='';draw();return}
   if(action.startsWith('cancel-send:')){try{const draft=await request('/api/mail/outbox/'+encodeURIComponent(action.slice(12)),{method:'DELETE',body:'{}'});await restoreDraft(draft);s.compose='float';s.overlay=null;await loadOutbox();say('SEND CANCELLED // DRAFT RESTORED')}catch(err){say(errorText(err),true)}return}
+  if(action.startsWith('toggle-original:')){const key=action.slice(16),on=s.originals?.includes(key);s.originals=on?s.originals.filter(id=>id!==key):[...(s.originals||[]),key];draw();if(!on&&s.prefs.remoteContent!=='original'&&s.bodies[key]?.remoteImages?.length&&!s.bodies[key].remoteAttempted)loadRemote(key);return}
+  if(action.startsWith('manage-folder:')){s.managedFolder=s.renameFolder=action.slice(14);s.overlay='folder-settings';draw();return}
   if(action.startsWith('win:')){const [,w,op]=action.split(':');setWin(w,op);draw();return}
   if(action.startsWith('go:')){s.view='mail';s.search='';s.q='';replica?.call('cancel-search');s.overlay=null;s.filter='all';await loadFolder(action.slice(3));return}
   if(action.startsWith('settings:')){s.view='settings';s.tab=action.slice(9);s.overlay=null;draw();loadSettings(s.tab);return}
@@ -534,6 +536,7 @@ const finishPointer=()=>setTimeout(()=>{pointerBusy=false;if(drawPending){drawPe
 for(const event of ['pointerup','pointercancel','dragend','blur'])window.addEventListener(event,finishPointer,true)
 root.addEventListener('click',e=>{
   pointerBusy=false
+  if(s.menu){const item=e.target.closest('[data-menu]'),menu=s.menu;s.menu=null;draw();if(item)runMenu(item.dataset.menu,menu);return}
   if(Date.now()<s.suppressClickUntil){e.preventDefault();return}
   const searchChip=e.target.closest('[data-search-remove]');if(searchChip){const tokens=searchTokens(s.search);tokens.splice(Number(searchChip.dataset.searchRemove),1);searchMail(tokens.join(' '));return}
   const remote=e.target.closest('[data-remote]');if(remote){loadRemote(remote.dataset.remote);return}
@@ -548,7 +551,7 @@ root.addEventListener('click',e=>{
   if(row){s.cur=Number(row.dataset.i);s.bodyError='';if(e.target.closest('.mk')){act('select');return}}
   const thread=e.target.closest('[data-thread-message]');if(thread){const raw=current(s)?.threadMessages?.find(m=>m.key===thread.dataset.threadMessage);if(raw){s.openMessages=s.openMessages||[];s.openMessages=s.openMessages.includes(raw.key)?s.openMessages.filter(key=>key!==raw.key):[...s.openMessages,raw.key];draw();loadBody(false,message(raw,raw.folder))}return}
   const ctl=e.target.closest('[data-ctl-a]')
-  if(ctl){const [op,w]=ctl.dataset.ctlA.split('-');if(w==='auth'){if(op==='max'){s.authMax=!s.authMax;s.authMin=false}else{s.authMin=true;if(op==='close')s.authPassword=''}draw();return}if(w==='compose'){act(op==='max'?'full-compose':'min-compose');return}if(WINS.includes(w)){if(s.desktop&&s.view==='mail')setWin(w,{min:'docked',max:'max',close:'collapse'}[op]);else if(w==='reader'){if(op==='close')s.cur=-1;else if(op==='min')s.mobilePane='list'}}if(w==='settings')s.view='mail';if(w==='preview'){s.overlay=null}draw();return}
+  if(ctl){const [op,w]=ctl.dataset.ctlA.split('-');if(w==='auth'){if(op==='max'){s.authMax=!s.authMax;s.authMin=false}else{s.authMin=true;if(op==='close')s.authPassword=''}draw();return}if(w==='compose'){act(op==='max'?'full-compose':op==='close'?'discard-draft':'min-compose');return}if(WINS.includes(w)){if(s.desktop&&s.view==='mail')setWin(w,{min:'docked',max:'max',close:'collapse'}[op]);else if(w==='reader'){if(op==='close')s.cur=-1;else if(op==='min')s.mobilePane='list'}}if(w==='settings')s.view='mail';if(w==='preview'){s.overlay=null}draw();return}
   const a=e.target.closest('[data-a]');if(a){act(a.dataset.a).catch(err=>say(errorText(err),true));return}
   const desk=e.target.closest('[data-desk]');if(desk){if(e.detail!==1){if(desk.dataset.desk==='go:inbox')setWin('list','tiled');act(desk.dataset.desk).catch(err=>say(errorText(err),true))}return}
   const folder=e.target.closest('[data-f]');if(folder){act('go:'+folder.dataset.f);return}
@@ -619,6 +622,8 @@ async function previewPDFPage(number){
 async function choose(value){const overlay=s.overlay;s.overlay=null;if(overlay==='flag')await mutate('flag',{color:value},m=>({color:m.fl||''}));else await mutate('move',{target:value})}
 async function chooseSnooze(key){const option=snoozeOptions().find(option=>option.key===key);if(!option)return;if(key==='custom'){s.overlay='snooze-date';draw();return}await mutate('snooze',{until:option.date?.toISOString()||null})}
 window.addEventListener('keydown',e=>{
+ if(s.menu){const items=[...root.querySelectorAll('.ctx button')],i=items.indexOf(document.activeElement);if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();s.menu=null;draw()}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();items[(i+(e.key==='ArrowDown'?1:items.length-1))%items.length]?.focus()}return}
+ if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){const el=document.activeElement?.closest?.('[data-f],[data-attachment],.row')||root.querySelector(`.row[data-i="${s.cur}"]`),menu=el&&menuFor(el);if(menu){e.preventDefault();const r=el.getBoundingClientRect();openMenu(menu,r.left+12,r.bottom)}return}
  if(e.key==='Tab'){
   const dialog=root.querySelector('[role="dialog"][aria-modal="true"]')
   if(dialog){const controls=[...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]')].filter(el=>el.getClientRects().length),first=controls[0],last=controls.at(-1);if(!first){e.preventDefault();dialog.focus();return}if(e.shiftKey&&(!dialog.contains(document.activeElement)||document.activeElement===first)||!e.shiftKey&&(!dialog.contains(document.activeElement)||document.activeElement===last)){e.preventDefault();(e.shiftKey?last:first).focus();return}}
@@ -728,3 +733,26 @@ start().then(async()=>{
  }catch(err){say(errorText(err),true)}finally{history.replaceState(null,'',location.pathname)}}
  if(s.account?.connected&&params.has('mailto')){try{const url=new URL(params.get('mailto'));if(url.protocol==='mailto:'){newDraft();s.draft.to=decodeURIComponent(url.pathname);s.draft.subject=url.searchParams.get('subject')||'';s.draft.body=url.searchParams.get('body')||'';draw();replica?.call('put',{store:'drafts',key:'current',value:s.draft})}}catch{say('The mailto link could not be opened.',true)}}
 })
+// Right-click menus for mail objects; inputs, links, selected text and message bodies keep the native menu.
+function menuFor(el){
+  const file=el.closest('[data-attachment]'),msg=el.closest('.tm.e[data-thread-key]'),row=el.closest('.row'),folder=el.closest('[data-f]'),win=el.closest('.wt')?.closest('[data-w]')
+  if(file){const links=[...file.closest('.files').querySelectorAll('[data-attachment]')].map(link=>({href:link.getAttribute('href'),filename:link.dataset.attachment}));return {label:file.dataset.attachment,items:[['Preview','attach-preview'],['Download','attach-download']],links,index:links.findIndex(link=>link.href===file.getAttribute('href'))}}
+  if(msg){const raw=current(s)?.threadMessages?.find(m=>m.key===msg.dataset.threadKey),m=raw?message(raw,raw.folder):current(s);if(!m)return null;s.threadMessage=raw?.key;const html=s.bodies[m.bodyKey||m.id]?.bodyHTML,orig=(s.prefs.remoteContent==='original')!==!!s.originals?.includes(m.id);return {label:m.subj,items:[['Reply','reply'],['Reply all','reply-all'],['Forward','forward'],...(html?[null,[orig?'Text view':'View original','toggle-original:'+m.id]]:[])]}}
+  if(row){const i=Number(row.dataset.i),m=visible(s)[i];if(!m)return null;if(s.picked.length&&!s.picked.includes(m.id))s.picked=[];s.cur=i
+    return {label:m.subj,items:[['Open','open'],['Reply','reply'],['Reply all','reply-all'],['Forward','forward'],null,[m.un?'Mark as read':'Mark as unread',m.un?'read':'unread'],[m.fl?'Unflag':'Flag','flag'],['Flag color…','flagc'],m.f==='snoozed'?['Return to inbox','unsnooze']:['Snooze…','snooze'],['Move to…','move'],null,['Archive','archive'],['Junk','junk'],['Trash','trash'],null,[s.picked.includes(m.id)?'Deselect':'Select','select'],['Create rule from sender','rule-from-message']]}}
+  if(folder){const f=folder.dataset.f,custom=folder.querySelector('[data-manage-folder]');return {label:f,items:[['Open','go:'+f],...(custom?[['Rename or delete…','manage-folder:'+f]]:[]),null,['New folder…','new-folder']]}}
+  if(win&&s.desktop){const w=win.dataset.w;return {label:w,items:[['Collapse','win:'+w+':collapse'],['Dock','win:'+w+':docked'],[s.wins[w]==='max'?'Restore':'Maximize','win:'+w+':max']]}}
+  return null
+}
+function openMenu(menu,x,y){pointerBusy=false;s.menu={...menu,x:Math.max(0,Math.min(x,innerWidth-230)),y:Math.max(0,Math.min(y,innerHeight-menu.items.length*24-12))};draw();root.querySelector('.ctx button')?.focus()}
+function runMenu(action,menu){
+  if(action==='attach-preview'){previewAttachment(menu.index,menu.links);return}
+  if(action==='attach-download'){const file=menu.links[menu.index];downloadAttachment(file.href,file.filename).catch(err=>say(errorText(err),true));return}
+  act(action).catch(err=>say(errorText(err),true))
+}
+root.addEventListener('contextmenu',e=>{
+  if(e.target.closest('input,textarea,select,[contenteditable="true"],a[href]:not([data-attachment])')||String(getSelection()))return
+  const menu=menuFor(e.target);if(!menu)return
+  e.preventDefault();openMenu(menu,e.clientX,e.clientY)
+})
+window.addEventListener('wheel',()=>{if(s.menu){s.menu=null;draw()}},{passive:true})
