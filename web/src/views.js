@@ -4,6 +4,7 @@ import { ico, TRI, CTL, K, esc, spine, W, ini, prog, help } from './design.js'
 import { SYSTEM_FOLDERS, COLORS, TABS, visible, current, role, targetFolder, message,snoozeOptions,unsubscribeLinks,searchTokens } from './model.js'
 import {safeRichHTML} from './rich-text.js'
 import {listWindow} from './list-window.js'
+import {morph} from './morph.js'
 
 const keyHint=(s,action)=>K(...keyParts(keyBindings(s.prefs)[action]))
 const button=(a,label,cls='btn sm')=>`<button type="button" class="${cls}" data-a="${a}">${label}</button>`
@@ -73,7 +74,7 @@ export function messageRows(s,rows=visible(s)) {
 export function paintSelection(root,s) {
   const list=root.querySelector('.rows')
   if(!list||!root.querySelector('.reader'))return false
-  if(!list.querySelector(`[data-i="${s.cur}"]`))list.innerHTML=messageRows(s)
+  if(!list.querySelector(`[data-i="${s.cur}"]`))morph(list,messageRows(s))
   for(const row of list.querySelectorAll('.row')){
     const selected=Number(row.dataset.i)===s.cur
     row.classList.toggle('cur',selected)
@@ -84,9 +85,12 @@ export function paintSelection(root,s) {
   root.querySelector('.reader').outerHTML=reader(s)
   return true
 }
-export function emailDocument(html, dark=false,font='sans',fonts={}) {
+export function emailDocument(html, dark=false,font='sans',fonts={},original=false) {
+  const csp=`<meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; form-action 'none'; base-uri 'none'">`
+  // Original mode keeps the sender's own look: no theme colors or reader font, on the white page senders design for.
+  if(original)return `<!doctype html><html><head>${csp}<style>:root{color-scheme:light}body{margin:8px;background:#fff;color:#000}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`
   const name=font==='mono'?'IBM Plex Mono':'IBM Plex Sans',data=fonts[font==='mono'?'mono':'sans']
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; form-action 'none'; base-uri 'none'"><style>${data?`@font-face{font-family:'${name}';src:url('${data}') format('truetype')}`:''}:root{color-scheme:${dark?'dark':'light'}}body{margin:0;font:15px/1.75 '${name}',${font==='mono'?'monospace':'sans-serif'};overflow-wrap:anywhere;color:${dark?'#E6E6E0':'#141413'};background:transparent}img{max-width:100%}a{color:inherit}pre{white-space:pre-wrap}table{max-width:100%}</style></head><body>${html}</body></html>`
+  return `<!doctype html><html><head>${csp}<style>${data?`@font-face{font-family:'${name}';src:url('${data}') format('truetype')}`:''}:root{color-scheme:${dark?'dark':'light'}}body{margin:0;font:15px/1.75 '${name}',${font==='mono'?'monospace':'sans-serif'};overflow-wrap:anywhere;color:${dark?'#E6E6E0':'#141413'};background:transparent}img{max-width:100%}a{color:inherit}pre{white-space:pre-wrap}table{max-width:100%}</style></head><body>${html}</body></html>`
 }
 function reader(s) {
   const m=current(s)
@@ -97,7 +101,7 @@ function reader(s) {
   const renderMessage=(x,i)=>{
     const e=s.bodies[x.bodyKey||x.id],open=expanded||i===thread.length-1||s.openMessages?.includes(x.key)
     if(!open)return `<button class="tm c thread-message" data-thread-message="${esc(x.key)}"><span class="av">${esc(ini(x.who))}</span><span class="w">${esc(x.who)}</span><span class="s">${esc(x.snip)}</span><span class="d">${esc(x.t)}</span></button>`
-    const body=e?!e.bodyHTML?`<div class="body plain-body">${esc(e.bodyPlain)}</div>`:`<iframe class="email-frame" title="Email message" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="${esc(emailDocument(e.displayHTML??e.bodyHTML??'',s.theme==='dark',s.prefs.readingFont,s.readerFonts))}"></iframe>`:`<div class="body prm mute"><div>${x.pendingLocation?'LOCATION_CHANGE_PENDING //':s.bodyError?esc(s.bodyError):'LOADING_MESSAGE //'}</div>${s.bodyError?button('retry-body','RETRY'):''}</div>`
+    const body=e?!e.bodyHTML?`<div class="body plain-body">${esc(e.bodyPlain)}</div>`:`<iframe class="email-frame${s.prefs.remoteContent==='original'?' original':''}" title="Email message" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="${esc(emailDocument(e.displayHTML??e.bodyHTML??'',s.theme==='dark',s.prefs.readingFont,s.readerFonts,s.prefs.remoteContent==='original'))}"></iframe>`:`<div class="body prm mute"><div>${x.pendingLocation?'LOCATION_CHANGE_PENDING //':s.bodyError?esc(s.bodyError):'LOADING_MESSAGE //'}</div>${s.bodyError?button('retry-body','RETRY'):''}</div>`
     const files=(e?.attachments||[]).map(a=>`<a class="file" data-attachment="${esc(a.filename)}" href="/api/mail/attachment?${esc(new URLSearchParams({folder:x.folder,id:x.uid,validity:x.uidValidity,filename:a.filename}).toString())}" target="_blank" rel="noreferrer"><div class="pv dots"></div><div class="nm"><span>${esc(a.filename)}</span><span class="z">${Math.ceil(a.size/1024)}K</span></div></a>`).join('')
     return `<div class="tm e" data-thread-key="${esc(x.key)}"><div class="h"><span class="av">${esc(ini(x.who))}</span><div><div class="w">${esc(x.who)}</div><div class="a"><span class="desktop-only">${esc(x.em)} → ${esc((e?.to||x.to||[]).join(', '))}</span><span class="phone-only">${esc(x.t)} → ${esc((e?.to||x.to||[]).map(address=>address.includes(s.account.icloud_email)?'me':address).join(', '))}</span></div></div><span class="d">${esc(x.t)}</span></div>${body}${e?.remoteImages?.length?`<div class="notice">${ico('eye')} REMOTE_CONTENT: ${e.remoteLoading?'LOADING':Object.keys(e.loadedImages||{}).length===e.remoteImages.length?'PROXIED':'BLOCKED'} // ${e.trackersStripped||0} TRACKERS STRIPPED<span class="sp"></span><button class="link" data-remote="${esc(x.id)}" ${e.remoteLoading?'disabled':''}>${e.remoteLoading?'LOADING…':e.remoteError?'RETRY VIA PROXY':'LOAD VIA PROXY'}</button></div>${e.remoteError?`<div role="alert" class="form-alert">${esc(e.remoteError)}</div>`:''}`:e?.trackersStripped?`<div class="notice">${ico('eye')} ${e.trackersStripped} TRACKERS STRIPPED</div>`:''}${files&&!x.pendingLocation?`<div class="files">${files}</div>`:''}</div>`
   }
@@ -167,7 +171,7 @@ function settings(s){
     body=section('DEVICES',(s.push?.devices||[]).map(device=>kv(esc(device.name),`${device.id===s.pushID?'This device · ':''}Web Push${device.error?'<small>'+esc(device.error)+'</small>':''}`,`<button type="button" class="ib" data-a="disable-push:${esc(device.id)}" aria-label="Disable notifications for ${esc(device.name)}"><span class="tgl on"></span></button>`)).join('')+(!s.notifyEnabled?kv('This device',s.pushSupported?'Browser permission required<small>On iPhone and iPad, install the app first.</small>':'Web Push is unavailable in this browser.',s.pushSupported&&s.push?.publicKey?button('enable-push','ENABLE'):''):'')+(s.pushError?`<p role="alert">${esc(s.pushError)}</p>`:''))+section('WHEN',kv('Notify for',choices(s,'notifications',[['all','ALL'],['vip','VIP + DIRECT'],['none','NONE']]))+kv('Quiet hours',button('quiet-hours',`${esc(s.prefs.quietStart||'22:00')}–${esc(s.prefs.quietEnd||'07:30')}`,'link'),`<button class="ib" data-pref="quietHours" data-value="toggle" aria-label="Toggle quiet hours" aria-pressed="${!!s.prefs.quietHours}"><span class="tgl ${s.prefs.quietHours?'on':''}"></span></button>`)+kv('Undo send',choices(s,'undoSeconds',[[5,'5S'],[10,'10S'],[20,'20S'],[30,'30S']])))
   }else if(s.tab==='privacy'){
     lines=['REMOTE_CONTENT: PROXIED ON CONSENT //','TRACKERS: STRIPPED //','YOUR_IP: HIDDEN']
-    body=section('REMOTE_CONTENT',kv('Default',choices(s,'remoteContent',[['block','BLOCK'],['proxy','PROXY']]))+kv('Allowed senders',String(s.prefs.allowedSenders?.length||0),button('manage-senders','MANAGE','btn sm quiet'))+kv('Strip tracking params','utm_*, fbclid, mc_eid…',button('toggle-tracking',`<span class="tgl ${s.prefs.stripTracking?'on':''}"></span>`,'ib')))+section('LOCAL_CACHE',kv('This device',`${Object.keys(s.bodies).length} message bodies in memory`,button('clear-cache','CLEAR')))
+    body=section('REMOTE_CONTENT',kv('Default',choices(s,'remoteContent',[['block','BLOCK'],['proxy','PROXY'],['original','ORIGINAL']]))+kv('Allowed senders',String(s.prefs.allowedSenders?.length||0),button('manage-senders','MANAGE','btn sm quiet'))+kv('Strip tracking params','utm_*, fbclid, mc_eid…',button('toggle-tracking',`<span class="tgl ${s.prefs.stripTracking?'on':''}"></span>`,'ib')))+section('LOCAL_CACHE',kv('This device',`${Object.keys(s.bodies).length} message bodies in memory`,button('clear-cache','CLEAR')))
   }else if(s.tab==='identities'){
     lines=['ALIASES: NOT EXPOSED OVER IMAP //','SUGGESTED FROM DELIVERED-TO //','OWNERSHIP: VERIFIED BY ICLOUD ON SEND']
     body=section('SEND_FROM',kv(esc(s.account.icloud_email),'Primary',button('edit-identity:'+(s.prefs.identities?.findIndex(identity=>identity.address===s.account.icloud_email)>=0?s.prefs.identities.findIndex(identity=>identity.address===s.account.icloud_email):-2),'EDIT'))+(s.prefs.identities||[]).map((identity,i)=>identity.address===s.account.icloud_email?'':kv(esc(identity.address),`${esc(identity.name||'Sender identity')}<small>${esc(identity.signature||'No signature')}</small>`,button('edit-identity:'+i,'EDIT')+' '+button('remove-identity:'+i,'REMOVE','btn sm quiet'))).join(''),button('edit-identity:-1','+ ADD'))+section('SUGGESTED',(s.identitySuggestions||[]).filter(identity=>!s.prefs.identities?.some(known=>known.address===identity.address)).slice(0,5).map(identity=>kv(esc(identity.address),`${identity.count} messages delivered here`,button('suggest-identity:'+esc(identity.address),'ADD'))).join('')||kv('Addresses','No other delivered-to addresses found.'))

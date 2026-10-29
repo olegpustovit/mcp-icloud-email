@@ -11,6 +11,7 @@ import { current, message, visible, targetFolder, role, COLORS, rebase, recipien
 import { W, prog, esc } from './design.js'
 import { openReplica } from './replica/client.js'
 import {safeRichHTML} from './rich-text.js'
+import {morph} from './morph.js'
 
 const root=document.getElementById('root')
 const params=new URLSearchParams(location.search)
@@ -30,7 +31,7 @@ root.addEventListener('scroll',event=>{
   if(list.scrollTop===(s.listScroll||0)&&list.clientHeight===s.listHeight)return
   s.listScroll=list.scrollTop;s.listHeight=list.clientHeight
   cancelAnimationFrame(listFrame)
-  listFrame=requestAnimationFrame(()=>{if(list.isConnected&&!pointerBusy)list.innerHTML=messageRows(s)})
+  listFrame=requestAnimationFrame(()=>{if(list.isConnected&&!pointerBusy)morph(list,messageRows(s))})
 },true)
 
 function draw() {
@@ -49,7 +50,7 @@ function draw() {
   let richOffset=null
   if(richSelection&&focus.contains(richSelection.startContainer)){const range=richSelection.cloneRange();range.selectNodeContents(focus);range.setEnd(richSelection.startContainer,richSelection.startOffset);richOffset=range.toString().length}
   const scrolls=[...root.querySelectorAll('.rows,.rc,.sc .wb')].map(el=>[el.className,el.scrollTop])
-  root.innerHTML=s.account===null?`<main class="loading-screen dots">${W('SYSTEM_STATUS',`<div class="form-grid"><div class="disp">${s.error?'CONNECTION: FAILED':'LOADING_ACCOUNT'}</div>${s.error?`<div role="alert">${esc(s.error)}</div><button class="btn" data-a="retry-start">TRY AGAIN</button>`:prog(0)}</div>`,{on:1,cls:'pop',noctl:true})}</main>`:s.account===false?authView(s):!s.account.connected||s.view==='link'?connectView(s):s.sync&&!s.enteredInbox&&(!s.sync.ready||s.sync.phase==='importing')?syncView(s):mailView(s)
+  morph(root,s.account===null?`<main class="loading-screen dots">${W('SYSTEM_STATUS',`<div class="form-grid"><div class="disp">${s.error?'CONNECTION: FAILED':'LOADING_ACCOUNT'}</div>${s.error?`<div role="alert">${esc(s.error)}</div><button class="btn" data-a="retry-start">TRY AGAIN</button>`:prog(0)}</div>`,{on:1,cls:'pop',noctl:true})}</main>`:s.account===false?authView(s):!s.account.connected||s.view==='link'?connectView(s):s.sync&&!s.enteredInbox&&(!s.sync.ready||s.sync.phase==='importing')?syncView(s):mailView(s))
   if(renderedOverlay===s.overlay)root.querySelectorAll('.ov:not(.compose)').forEach(el=>el.classList.remove('m-open'))
   if(renderedCompose===s.compose)root.querySelector('.compose')?.classList.remove('m-open')
   if(renderedToast===s.toast)root.querySelector('.toast')?.classList.remove('m-toast')
@@ -566,7 +567,7 @@ async function loadRemoteAutomatically(){
  const mail=current(s);if(!mail)return
  for(const m of mail.threadMessages?.map(raw=>message(raw,raw.folder))||[mail]){
   const body=s.bodies[m.bodyKey||m.id]
-  if(body?.remoteImages?.length&&!body.remoteLoading&&!body.remoteAttempted&&(s.prefs.remoteContent==='proxy'||s.prefs.allowedSenders?.some(sender=>sender.toLowerCase()===m.em.toLowerCase())))loadRemote(m.id)
+  if(body?.remoteImages?.length&&!body.remoteLoading&&!body.remoteAttempted&&(['proxy','original'].includes(s.prefs.remoteContent)||s.prefs.allowedSenders?.some(sender=>sender.toLowerCase()===m.em.toLowerCase())))loadRemote(m.id)
  }
 }
 async function loadRemote(key){
