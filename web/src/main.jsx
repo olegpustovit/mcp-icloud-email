@@ -41,6 +41,7 @@ function draw() {
   drawPending=false
   const listHeight=root.querySelector('.rows')?.clientHeight;if(listHeight)s.listHeight=listHeight
   const rowHeight=root.querySelector('.rows .row')?.getBoundingClientRect().height;if(rowHeight)s.rowHeight=rowHeight
+  const dayHeight=root.querySelector('.day')?.getBoundingClientRect().height;if(dayHeight)s.dayHeight=dayHeight
   if(s.overlay!=='preview'&&s.preview){if(s.preview.url)URL.revokeObjectURL(s.preview.url);s.preview.pdf?.destroy().catch(()=>{});s.preview=null}
   document.documentElement.dataset.theme=s.theme
   document.documentElement.dataset.density=s.prefs.density||'default'
