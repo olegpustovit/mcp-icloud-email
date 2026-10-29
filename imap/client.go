@@ -58,6 +58,7 @@ type Email struct {
 	FlagColor       string            `json:"flagColor,omitempty"`
 	UIDValidity     uint32            `json:"uidValidity"`
 	Attachments     []Attachment      `json:"attachments,omitempty"`
+	HasAttachments  bool              `json:"hasAttachments,omitempty"`
 	MessageID       string            `json:"messageId,omitempty"`
 	References      []string          `json:"references,omitempty"`
 	Folder          string            `json:"folder,omitempty"`

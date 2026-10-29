@@ -193,8 +193,7 @@ func (c *SyncClient) Fetch(folder string, uids []uint32, since uint64, flagsOnly
 		options.Envelope = true
 		options.InternalDate = true
 		options.RFC822Size = true
-		// shortcut: plain BODY skips the extension data iCloud sometimes malforms (the parse error kills the sync connection, which then refetches the same message forever); attachments named only in Content-Disposition lose their list indicator until opened. Upgrade if go-imap tolerates bad extension data.
-		options.BodyStructure = &imapv2.FetchItemBodyStructure{}
+		// No BODYSTRUCTURE: iCloud returns structures go-imap rejects, and the parse error kills the sync connection, which then refetches the same message forever.
 		options.BodySection = []*imapv2.FetchItemBodySection{header, preview}
 	}
 	rows, err := c.wire.Fetch(set, options).Collect()
@@ -257,16 +256,6 @@ func syncEmail(row *imapclient.FetchMessageBuffer, folder string, validity uint3
 			email.Date = e.Date
 		}
 	}
-	if row.BodyStructure != nil {
-		row.BodyStructure.Walk(func(_ []int, part imapv2.BodyStructure) bool {
-			if single, ok := part.(*imapv2.BodyStructureSinglePart); ok {
-				if name := single.Filename(); name != "" {
-					email.Attachments = append(email.Attachments, Attachment{Filename: name, Size: int64(single.Size)})
-				}
-			}
-			return true
-		})
-	}
 	return email
 }
 func readSyncHeaders(email *Email, raw []byte) {
@@ -281,6 +270,10 @@ func readSyncHeaders(email *Email, raw []byte) {
 	email.Unsubscribe = header.Get("List-Unsubscribe")
 	email.UnsubscribePost = header.Get("List-Unsubscribe-Post")
 	email.AutoSubmitted = header.Get("Auto-Submitted")
+	// shortcut: multipart/mixed stands in for attachment presence in list metadata; opening the message lists the real files.
+	if media, _, err := mime.ParseMediaType(header.Get("Content-Type")); err == nil && media == "multipart/mixed" {
+		email.HasAttachments = true
+	}
 }
 func messageIDs(value string) []string {
 	var ids []string

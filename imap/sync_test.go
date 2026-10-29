@@ -137,3 +137,13 @@ func TestDisplayAddressKeepsUTF8NamesParseable(t *testing.T) {
 		t.Fatalf("round trip failed: %q %v", parsed, err)
 	}
 }
+
+func TestSyncHeadersMarkMixedMessagesAsHavingAttachments(t *testing.T) {
+	for raw, want := range map[string]bool{"Content-Type: multipart/mixed; boundary=x\r\n\r\n": true, "Content-Type: multipart/alternative; boundary=x\r\n\r\n": false, "Content-Type: text/plain\r\n\r\n": false} {
+		var email Email
+		readSyncHeaders(&email, []byte(raw))
+		if email.HasAttachments != want {
+			t.Errorf("%q: HasAttachments=%v", raw, email.HasAttachments)
+		}
+	}
+}

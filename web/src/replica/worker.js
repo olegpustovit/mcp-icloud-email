@@ -15,7 +15,7 @@ const remove=(store,key)=>storageRemove(db,store,key)
 const headers=()=>({'X-Mail-Owner':owner,'X-Mail-Account':account})
 const rawKey=m=>`${m.folder}|${m.uidValidity}|${m.id}`
 const tokenWords=text=>text.toLowerCase().match(/[\p{L}\p{N}@._-]+/gu)||[]
-function searchRow(raw){const who=raw.from?.replace(/\s*<[^>]+>/,'')||'';return {...raw,who,em:address(raw.from),subj:raw.subject||'',snip:raw.snippet||'',f:role(raw.folder),un:raw.unread,fl:raw.flagColor,att:raw.attachments?.length||0}}
+function searchRow(raw){const who=raw.from?.replace(/\s*<[^>]+>/,'')||'';return {...raw,who,em:address(raw.from),subj:raw.subject||'',snip:raw.snippet||'',f:role(raw.folder),un:raw.unread,fl:raw.flagColor,att:raw.attachments?.length||(raw.hasAttachments?1:0)}}
 function indexMessage(raw){
   const old=indexed.get(raw.key)
   if(old)for(const word of old.words){const entries=words.get(word);entries?.delete(raw.key);if(!entries?.size)words.delete(word)}

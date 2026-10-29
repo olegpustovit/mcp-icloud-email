@@ -41,7 +41,7 @@ export function message(raw, folder) {
   const today = new Date(); today.setHours(0,0,0,0)
   const who = decodeWords(raw.from?.replace(/\s*<[^>]+>/, '').replace(/^"|"$/g,'').replace(/\\(.)/g,'$1') || '') || '(unknown sender)'
   const wake=role(folder)==='snoozed'?(raw.snoozeUntil?new Date(raw.snoozeUntil):null):undefined
-  return { ...raw, uid:raw.id, id:`${folder}|${raw.uidValidity}|${raw.id}`, folder, f:role(folder), who, em:address(raw.from), subj:raw.subject || '(no subject)', snip:raw.snippet || '', un:raw.unread, fl:raw.flagColor || null, att:raw.attachments?.length || 0,
+  return { ...raw, uid:raw.id, id:`${folder}|${raw.uidValidity}|${raw.id}`, folder, f:role(folder), who, em:address(raw.from), subj:raw.subject || '(no subject)', snip:raw.snippet || '', un:raw.unread, fl:raw.flagColor || null, att:raw.attachments?.length || (raw.hasAttachments ? 1 : 0),
     t:date >= today ? timeFormat.format(date) : dateFormat.format(date),
     day:wake===null?'Someday':wake?wakeFormat.format(wake):date >= today ? 'Today' : date >= new Date(today.getTime()-86400000) ? 'Yesterday' : monthFormat.format(date),
   }
