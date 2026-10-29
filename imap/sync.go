@@ -193,7 +193,8 @@ func (c *SyncClient) Fetch(folder string, uids []uint32, since uint64, flagsOnly
 		options.Envelope = true
 		options.InternalDate = true
 		options.RFC822Size = true
-		options.BodyStructure = &imapv2.FetchItemBodyStructure{Extended: true}
+		// shortcut: plain BODY skips the extension data iCloud sometimes malforms (the parse error kills the sync connection, which then refetches the same message forever); attachments named only in Content-Disposition lose their list indicator until opened. Upgrade if go-imap tolerates bad extension data.
+		options.BodyStructure = &imapv2.FetchItemBodyStructure{}
 		options.BodySection = []*imapv2.FetchItemBodySection{header, preview}
 	}
 	rows, err := c.wire.Fetch(set, options).Collect()
