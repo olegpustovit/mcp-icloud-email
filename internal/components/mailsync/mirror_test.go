@@ -55,7 +55,7 @@ func (f *syncFake) Folders() ([]imap.FolderInfo, error) {
 	if f.names != nil {
 		rows := make([]imap.FolderInfo, len(f.names))
 		for i, name := range f.names {
-			rows[i] = imap.FolderInfo{Name: name}
+			rows[i] = imap.FolderInfo{Name: name, Role: map[string]string{"Drafts": "drafts"}[name]}
 		}
 		return rows, nil
 	}
@@ -368,5 +368,23 @@ func TestDisconnectInvalidatesInFlightCredentialLookup(t *testing.T) {
 	s.mu.Unlock()
 	if count != 0 || calls != 2 {
 		t.Fatalf("monitors=%d credential calls=%d", count, calls)
+	}
+}
+
+func TestDraftSaveRefreshesOnlyDrafts(t *testing.T) {
+	s := testMirror(t)
+	ctx := context.Background()
+	fake := &syncFake{mail: map[uint32]imap.Email{}, validity: 7, modseq: 1, next: 1, closed: make(chan struct{}), names: []string{"INBOX", "Drafts", "Archive"}}
+	s.dialSync = func(_ context.Context, _, _ string, notify func()) (syncTransport, error) { return fake, nil }
+	mailbox, err := s.Mailbox(ctx, "owner@olegpustovit.com", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.WaitReady(ctx, "owner@olegpustovit.com"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return slices.Equal(mailbox.roleFolders(ctx, "drafts"), []string{"Drafts"}) })
+	if got := mailbox.roleFolders(ctx, "junk"); got != nil {
+		t.Fatalf("missing role must fall back to a full refresh, got %v", got)
 	}
 }

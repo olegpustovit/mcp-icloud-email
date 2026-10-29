@@ -257,7 +257,7 @@ func (m *Mailbox) DeleteEmail(ctx context.Context, folder, id string, permanent 
 		}
 		return errors.New("trash mailbox unavailable")
 	}
-	return m.change(ctx, nil, func(c *Connection) error { return c.Mail.DeleteEmail(ctx, folder, id, permanent) })
+	return m.change(ctx, []string{folder}, func(c *Connection) error { return c.Mail.DeleteEmail(ctx, folder, id, permanent) })
 }
 func (m *Mailbox) CreateFolder(ctx context.Context, name, parent string) error {
 	return m.change(ctx, nil, func(c *Connection) error { return c.Mail.CreateFolder(ctx, name, parent) })
@@ -276,8 +276,22 @@ func (m *Mailbox) DeleteFolder(ctx context.Context, name string, force bool) (em
 	return
 }
 func (m *Mailbox) SaveDraft(ctx context.Context, from string, to []string, subject, body string, opts imap.DraftOptions) (id string, err error) {
-	err = m.change(ctx, nil, func(c *Connection) error { id, err = c.Mail.SaveDraft(ctx, from, to, subject, body, opts); return err })
+	err = m.change(ctx, m.roleFolders(ctx, "drafts"), func(c *Connection) error { id, err = c.Mail.SaveDraft(ctx, from, to, subject, body, opts); return err })
 	return
+}
+
+// roleFolders scopes the post-change refresh; nil (no such role yet) falls back to refreshing every folder.
+func (m *Mailbox) roleFolders(ctx context.Context, role string) []string {
+	folders, err := m.s.Folders(ctx, m.owner, m.account)
+	if err != nil {
+		return nil
+	}
+	for _, folder := range folders {
+		if folder.Role == role {
+			return []string{folder.Name}
+		}
+	}
+	return nil
 }
 func (m *Mailbox) SendEmail(ctx context.Context, from string, to []string, subject, body string, opts smtp.SendOptions) error {
 	return m.change(ctx, nil, func(c *Connection) error {

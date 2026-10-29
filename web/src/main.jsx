@@ -21,6 +21,8 @@ let folderGeneration=0, toastTimer, countdownTimer, chordTimer, draftTimer,searc
 let undoStack=[]
 let rulePreviewTimer
 let savingDraft=false, draftRevision=0
+// Every keystroke is already saved locally; each iCloud save is an APPEND plus a delete and a Drafts reconcile.
+const DRAFT_SAVE_DELAY=30000
 let bodyRequests=new Map(),bodyRevision=0
 const inflightTransactions=new Map()
 let renderedOverlay,renderedCompose,renderedToast,pointerBusy=false,drawPending=false
@@ -313,7 +315,7 @@ async function attachFiles(files){
   try{for(const file of files){if(/[\\/\r\n\0]/.test(file.name))throw new Error('That filename contains unsupported characters.');const content=await base64File(file);if(s.draft!==draft)return;draft.attachments.push({filename:file.name,mimeType:file.type||'application/octet-stream',content})}await draftChanged();draw()}catch(err){say('Attachment could not be saved: '+errorText(err),true)}finally{s.attaching=false;draw()}
 }
 async function draftChanged(){
-  s.draftStatus='UNSAVED';draftRevision++;await replica?.call('put',{store:'drafts',key:'current',value:s.draft});clearTimeout(draftTimer);draftTimer=setTimeout(saveDraft,3000)
+  s.draftStatus='UNSAVED';draftRevision++;await replica?.call('put',{store:'drafts',key:'current',value:s.draft});clearTimeout(draftTimer);draftTimer=setTimeout(saveDraft,DRAFT_SAVE_DELAY)
 }
 async function editDraft(){
   const m=current(s);if(!m)return
@@ -331,15 +333,16 @@ async function saveDraft(){
   await replica?.call('put',{store:'drafts',key:'current',value:draft})
   if(!navigator.onLine){savingDraft=false;s.draftStatus='SAVED LOCALLY // OFFLINE';draw();return}
   clearTimeout(draftTimer);s.draftStatus='SAVING…';draw()
-  try{const result=await request('/api/mail/draft',{method:'POST',body:JSON.stringify(composePayload())});if(s.draft===draft){s.draft.serverId=result.id;s.draft.draftFolder=result.folder||targetFolder(s,'drafts');s.draft.draftValidity=result.validity||s.draft.draftValidity||s.folderInfo?.find(f=>f.role==='drafts')?.uidValidity;await replica?.call('put',{store:'drafts',key:'current',value:s.draft});s.draftStatus=result.warning?'SAVED // PREVIOUS COPY REMAINS':revision===draftRevision?'SAVED // ICLOUD/DRAFTS':'UNSAVED';draw()}}
-  catch(err){s.draftStatus='SAVE FAILED';say(errorText(err),true)}finally{savingDraft=false;if(s.draft===draft&&revision!==draftRevision)draftTimer=setTimeout(saveDraft,3000)}
+  try{const result=await request('/api/mail/draft',{method:'POST',body:JSON.stringify(composePayload())});if(s.draft===draft){s.draft.serverId=result.id;s.draft.draftFolder=result.folder||targetFolder(s,'drafts');s.draft.draftValidity=result.validity||s.draft.draftValidity||s.folderInfo?.find(f=>f.role==='drafts')?.uidValidity;await replica?.call('put',{store:'drafts',key:'current',value:s.draft});s.draftStatus=result.warning?'SAVED // PREVIOUS COPY REMAINS':revision===draftRevision?'SAVED // ICLOUD/DRAFTS':'UNSAVED';draw()}else if(draft.sentDuringSave&&result.id){await replica.call('queue',{path:'/api/mail/mutate',body:{op:'delete',folder:result.folder||targetFolder(s,'drafts'),id:result.id,validity:result.validity||s.folderInfo?.find(f=>f.role==='drafts')?.uidValidity||0,permanent:true},kind:'mutation'});wakeReplay()}}
+  catch(err){s.draftStatus='SAVE FAILED';say(errorText(err),true)}finally{savingDraft=false;if(s.draft===draft&&revision!==draftRevision)draftTimer=setTimeout(saveDraft,DRAFT_SAVE_DELAY)}
 }
 async function sendDraft(){
  if(s.draft?.deliveryUncertain&&!confirm('The original delivery is unconfirmed. Check Sent first. Send another copy?'))return
   if(!s.draft||s.sending)return
   if(s.attaching){say('Wait for attachments to finish loading.');return}
   if(s.sync?.phase==='auth_failed'){say('Relink iCloud before sending. Your draft remains saved locally.',true);return}
-  if(savingDraft){say('Wait for the current draft save to finish.');return}
+  // A slow iCloud save must not block sending; saveDraft removes the copy it lands after the send.
+  if(savingDraft)s.draft.sentDuringSave=true
   clearTimeout(draftTimer);s.sending=true;draw()
   try{const payload={...composePayload(),...(s.sendAt?{sendAt:s.sendAt}:{}),transactionId:s.draft.transactionId||(s.draft.transactionId=crypto.randomUUID())};await replica.call('queue',{path:'/api/mail/outbox',body:payload,kind:'send'});wakeReplay();s.compose=null;s.draft=null;s.sendAt=null;await replica.call('remove',{store:'drafts',key:'current'});say(s.offline?'SEND QUEUED LOCALLY // REPLAYS ON RECONNECT':'MESSAGE QUEUED')}
 
