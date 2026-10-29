@@ -21,13 +21,15 @@ test('desktop shows when nothing tiled and floating panes leave the grid',()=>{
 })
 test('snap near edges or slot, clamp, and persistence tolerate bad data',()=>{
   const box={w:1000,h:600}
-  assert.equal(shouldSnap({x:300,y:200,w:300,h:200},box,208),false)
-  assert.equal(shouldSnap({x:5,y:200,w:300,h:200},box,208),true)
-  assert.equal(shouldSnap({x:700,y:200,w:290,h:200},box,208),true)
-  assert.equal(shouldSnap({x:220,y:300,w:300,h:200},box,208),true)
-  assert.equal(shouldSnap({x:300,y:5,w:300,h:200},box,208),true)
-  assert.equal(shouldSnap({x:300,y:4,w:300,h:592},box,208),false)
-  assert.deepEqual(clampGeo({x:-50,y:900,w:1200,h:200},box),{w:1000,h:200,x:0,y:400})
+  const g={x:300,y:200,w:300,h:200}
+  assert.equal(shouldSnap({x:400,y:250},g,box,208),false)
+  assert.equal(shouldSnap({x:10,y:250},g,box,208),true)
+  assert.equal(shouldSnap({x:990,y:250},g,box,208),true)
+  assert.equal(shouldSnap({x:400,y:250},{...g,x:230},box,208),true)
+  assert.equal(shouldSnap({x:400,y:4},g,box,208),false)
+  assert.deepEqual(clampGeo({x:-500,y:900,w:1200,h:100},box),{w:1000,h:160,x:-500,y:570})
+  assert.deepEqual(clampGeo({x:-900,y:-20,w:300,h:200},box),{w:300,h:200,x:-220,y:0})
+  assert.deepEqual(clampGeo({x:990,y:10,w:300,h:200},box),{w:300,h:200,x:920,y:10})
   const mem={v:null,getItem(){return this.v},setItem(k,v){this.v=v}}
   saveWins({wins:{...freshWins(),list:'docked'},geo:{reader:{x:1,y:2,w:3,h:4}}},mem)
   assert.equal(loadWins(mem).wins.list,'docked');assert.equal(loadWins(mem).geo.reader.w,3)

@@ -655,22 +655,31 @@ window.addEventListener('keydown',e=>{
  if(s.view==='mail'&&!meta&&(key==='ArrowDown'||key==='ArrowUp')){e.preventDefault();act(key==='ArrowDown'?'next':'prev')}
 
 })
-// Dragging a title bar floats the window; drawing is deferred while the pointer is down, so the move writes style directly and commits on release.
+// Dragging a title bar floats the window and the corner grip resizes it; drawing is deferred while the pointer is down, so moves write style directly and commit on release.
 root.addEventListener('pointerdown',e=>{
-  const win=e.target.closest('.panes:not(.set) .wt')?.closest('[data-w]');if(!win||e.button||e.target.closest('button')||!s.desktop||s.view!=='mail')return
-  const w=win.dataset.w,panes=root.querySelector('.panes'),pb=panes.getBoundingClientRect(),r=win.getBoundingClientRect(),box={w:pb.width,h:pb.height},ox=e.clientX-r.left,oy=e.clientY-r.top;let moved=false
+  const grip=e.target.closest('[data-grip]'),win=grip?null:e.target.closest('.panes:not(.set) .wt')?.closest('[data-w]');if(!grip&&!win||e.button||e.target.closest('button')||!s.desktop||s.view!=='mail')return
+  const w=grip?grip.dataset.grip:win.dataset.w,panes=root.querySelector('.panes'),pb=panes.getBoundingClientRect(),box={w:pb.width,h:pb.height},start={...s.geo[w]},r=(grip||win).closest('.flt,[data-w]').getBoundingClientRect(),ox=e.clientX-r.left,oy=e.clientY-r.top
+  let moved=false,pointer
+  e.preventDefault()
+  // Where the window would tile: before the next tiled pane, or after the last one.
+  const slot=()=>{const grid=layout(s.wins).grid,kids=[...panes.querySelectorAll(':scope>.win,:scope>.spine')],i=WINS.filter(k=>k===w||grid.includes(k)).indexOf(w),x=kids[i]?kids[i].getBoundingClientRect().left-pb.left:kids.length?kids.at(-1).getBoundingClientRect().right-pb.left+4:0;return {x,w:w==='reader'||!kids[i]?box.w-x:w==='side'?200:parseFloat(getComputedStyle(panes).getPropertyValue('--wl'))||400}}
   const move=ev=>{
-    if(!moved){if(Math.hypot(ev.clientX-e.clientX,ev.clientY-e.clientY)<5)return;moved=true
-      if(s.wins[w]!=='floating'){s.geo[w]={x:r.left-pb.left,y:r.top-pb.top,w:r.width,h:r.height};s.wins=winOp(s.wins,w,'floating');pointerBusy=false;draw();pointerBusy=true}}
+    if(!moved){if(Math.hypot(ev.clientX-e.clientX,ev.clientY-e.clientY)<5)return;moved=true;getSelection().removeAllRanges()
+      if(!grip&&s.wins[w]!=='floating'){s.geo[w]={x:r.left-pb.left,y:r.top-pb.top,w:r.width,h:r.height};s.wins=winOp(s.wins,w,'floating');pointerBusy=false;draw();pointerBusy=true}}
     const el=root.querySelector(`[data-w="${w}"]`)?.closest('.flt');if(!el)return
-    const g=s.geo[w]=clampGeo({...s.geo[w],x:ev.clientX-pb.left-ox,y:ev.clientY-pb.top-oy},box);el.style.left=g.x+'px';el.style.top=g.y+'px'
+    pointer={x:ev.clientX-pb.left,y:ev.clientY-pb.top}
+    if(grip){const g=s.geo[w]=clampGeo({...start,w:start.w+ev.clientX-e.clientX,h:start.h+ev.clientY-e.clientY},box);el.style.width=g.w+'px';el.style.height=g.h+'px';return}
+    const g=s.geo[w]=clampGeo({...s.geo[w],x:pointer.x-ox,y:pointer.y-oy},box);el.style.left=g.x+'px';el.style.top=g.y+'px'
+    // The hint is a bare DOM node: the next draw() morphs it away, so it needs no state.
+    const target=slot(),snap=shouldSnap(pointer,g,box,target.x);let hint=panes.querySelector(':scope>.snap-hint')
+    if(snap&&!hint)panes.append(hint=Object.assign(document.createElement('div'),{className:'snap-hint'}))
+    if(hint){hint.hidden=!snap;hint.style.left=target.x+'px';hint.style.width=target.w+'px'}
   }
   const up=()=>{
     removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up)
     if(!moved)return
     s.suppressClickUntil=Date.now()+300
-    const grid=layout(s.wins).grid,i=WINS.filter(k=>k===w||grid.includes(k)).indexOf(w),kid=[...panes.querySelectorAll(':scope>.win,:scope>.spine')][i]
-    if(shouldSnap(s.geo[w],box,kid?kid.getBoundingClientRect().left-pb.left:-1e9))s.wins=winOp(s.wins,w,'tiled')
+    if(!grip&&pointer&&shouldSnap(pointer,s.geo[w],box,slot().x))s.wins=winOp(s.wins,w,'tiled')
     saveWins(s);pointerBusy=false;draw()
   }
   addEventListener('pointermove',move);addEventListener('pointerup',up);addEventListener('pointercancel',up)

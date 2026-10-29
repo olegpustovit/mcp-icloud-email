@@ -389,3 +389,8 @@ html,body,#root{width:100%;height:100%;min-width:320px}body{overflow:hidden}a{te
 .operation-list{max-height:75dvh;overflow:auto}.status-action{font:inherit;color:inherit}.status-action:hover{text-decoration:underline}
 .ctx{position:fixed;z-index:60;min-width:210px;padding:3px 0;background:var(--paper-3);border:var(--frame);box-shadow:3px 3px 0 var(--line);font:500 var(--fs-ui)/1 var(--f-mono);text-transform:uppercase;letter-spacing:.04em}.ctx button{display:flex;align-items:center;gap:8px;width:100%;height:var(--item);padding:0 10px;text-align:left}.ctx button:hover,.ctx button:focus-visible{background:var(--acc);color:var(--acc-ink);outline:0}.ctx hr{border:0;border-top:var(--hairline);margin:3px 0}
 .msg-view{font:500 var(--fs-label)/1 var(--f-mono);margin-right:6px}
+.snap-hint{position:absolute;top:var(--gutter);bottom:var(--gutter);z-index:5;border:2px dashed var(--ink);background:color-mix(in srgb,var(--acc) 14%,transparent);pointer-events:none}
+.flt .grip{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,var(--ink) 50% 58%,transparent 58% 70%,var(--ink) 70% 78%,transparent 78%)}
+/* Desktop-app selection: chrome is not text; message content, fields and settings values stay selectable. */
+.app{-webkit-user-select:none;user-select:none}
+.app :is(input,textarea,select,[contenteditable="true"],.body,.subj,.tm.e .w,.tm.e .a,.prm,.kv .v,.outbox-job,[role="alert"]){-webkit-user-select:text;user-select:text}

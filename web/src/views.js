@@ -206,7 +206,7 @@ function menu(s){
 export function mailView(s) {
   const wins=s.desktop===false||!s.wins?freshWins():s.wins,L=layout(wins),pane={side:sidebar,list,reader}
   const tile=w=>L.mode[w]==='collapsed'?spine(TITLES[w],w==='side'?s.counts.inbox||0:null,`win:${w}:tiled`):pane[w](s)
-  const float=w=>{const g=s.geo?.[w]||{x:40,y:40,w:420,h:420};return `<div class="flt" style="left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px">${pane[w](s)}</div>`}
+  const float=w=>{const g=s.geo?.[w]||{x:40,y:40,w:420,h:420};return `<div class="flt" style="left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px">${pane[w](s)}<span class="grip" data-grip="${w}" aria-hidden="true"></span></div>`}
   const panes=s.view==='settings'?`<div class="panes set">${sidebar(s)}${W('/_settings/_'+s.tab,settings(s),{on:1,cls:'sc',a:'settings'})}</div>`:`<div class="panes" style="grid-template-columns:${L.cols}">${L.grid.map(tile).join('')}${L.desk?`<div class="desk" role="group" aria-label="Desktop">${DESK.map(([i,l,a])=>`<button type="button" class="dicon" data-desk="${a}" aria-label="${l}. Double-click or press Enter to open">${ico(i)}<span>${l}</span></button>`).join('')}</div>`:''}${WINS.filter(w=>wins[w]==='floating').map(float).join('')}</div>`
   const dock=WINS.filter(w=>wins[w]==='docked').map(w=>`<button type="button" class="dtab" data-a="win:${w}:tiled" aria-label="Restore ${TITLES[w]}" title="Restore">${TITLES[w]}</button>`).join('')
   const phase=s.sync?.phase,live=!s.offline&&!s.error&&phase==='live',work=s.pending||s.rejected?.length||s.renames?.length

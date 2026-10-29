@@ -17,10 +17,10 @@ export function layout(wins){
   const cols=grid.map(w=>mode[w]==='collapsed'?'24px':w===fill?'minmax(0,1fr)':WIDTH[w]).concat(fill?[]:['minmax(0,1fr)']).join(' ')
   return {mode,grid,cols,desk:!fill}
 }
-// A released window snaps back when its left/right edge is within `d` of the workspace edge, or its left edge is within 2d of its tiling slot.
-// Top/bottom edges only count for windows shorter than the workspace (a full-height pane always touches both).
-export function shouldSnap(g,box,slotX,d=24){return g.x<d||g.x+g.w>box.w-d||Math.abs(g.x-slotX)<d*2||(g.h<box.h-d*2&&(g.y<d||g.y+g.h>box.h-d))}
-export function clampGeo(g,box){const w=Math.min(g.w,box.w),h=Math.min(g.h,box.h);return {w,h,x:Math.max(0,Math.min(box.w-w,g.x)),y:Math.max(0,Math.min(box.h-h,g.y))}}
+// Snap like a desktop OS: the pointer reaches the left/right workspace edge, or the window's left edge lands within 2d of its tiling slot.
+export function shouldSnap(p,g,box,slotX,d=24){return p.x<d||p.x>box.w-d||Math.abs(g.x-slotX)<d*2}
+// Windows may hang off-screen but keep `keep` px and the title bar reachable; 240×160 is the smallest usable pane.
+export function clampGeo(g,box,keep=80){const w=Math.min(Math.max(240,g.w),box.w),h=Math.min(Math.max(160,g.h),box.h);return {w,h,x:Math.max(keep-w,Math.min(box.w-keep,g.x)),y:Math.max(0,Math.min(box.h-30,g.y))}}
 export function loadWins(store=localStorage){
   try{const v=JSON.parse(store.getItem('mail.wins'));const wins=freshWins();for(const w of WINS)if(MODES.includes(v?.wins?.[w]))wins[w]=v.wins[w];return {wins,geo:v?.geo&&typeof v.geo==='object'?v.geo:{}}}catch{return {wins:freshWins(),geo:{}}}
 }
