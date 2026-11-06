@@ -2,7 +2,9 @@ package mailsync
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
@@ -12,13 +14,16 @@ type rawHeaderFetcher interface {
 }
 
 func fetchMailboxResilient(wire syncTransport, name string, uids []uint32, since uint64, flagsOnly bool) ([]imap.Email, map[uint32]bool, error) {
+	started := time.Now()
 	var rawHeader func(uint32) (imap.Email, error)
 	if fetcher, ok := wire.(rawHeaderFetcher); ok {
 		rawHeader = func(uid uint32) (imap.Email, error) { return fetcher.FetchEnvelope(name, uid) }
 	}
-	return fetchResilient(uids, func(batch []uint32) ([]imap.Email, error) {
+	messages, broken, err := fetchResilient(uids, func(batch []uint32) ([]imap.Email, error) {
 		return wire.Fetch(name, batch, since, flagsOnly)
 	}, rawHeader, wire.Closed())
+	slog.Info("mail sync fetch", "folder", name, "uid_count", len(uids), "flags_only", flagsOnly, "duration_ms", time.Since(started).Milliseconds(), "error", err)
+	return messages, broken, err
 }
 
 func fetchResilient(uids []uint32, fetch func([]uint32) ([]imap.Email, error), rawHeader func(uint32) (imap.Email, error), closed <-chan struct{}) ([]imap.Email, map[uint32]bool, error) {
