@@ -2,6 +2,7 @@ package mailsync
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
@@ -46,6 +47,9 @@ func fetchSplit(uids []uint32, fetch func([]uint32) ([]imap.Email, error), rawHe
 	case <-closed:
 		return nil, nil, err
 	default:
+	}
+	if !strings.Contains(err.Error(), "imapwire:") {
+		return nil, nil, err
 	}
 	if len(uids) == 1 {
 		if rawHeader == nil {
