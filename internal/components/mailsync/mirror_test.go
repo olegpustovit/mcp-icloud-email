@@ -328,7 +328,7 @@ func TestTimedOutFetchReconnectsAndCompletesImport(t *testing.T) {
 	s := testMirror(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	owner, account := "owner@example.com", "account@example.com"
+	owner, account := "owner@example.com", "mirror@icloud.com"
 	fake := &syncFake{mail: map[uint32]imap.Email{1: {ID: "1", Subject: "one", Date: time.Now()}}, validity: 7, next: 2, modseq: 1, closed: make(chan struct{})}
 	attempts := 0
 	s.dialSync = func(context.Context, string, string, func()) (syncTransport, error) {

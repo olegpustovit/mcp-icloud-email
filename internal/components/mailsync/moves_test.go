@@ -35,6 +35,15 @@ type moveWire struct {
 func (f *moveWire) SearchPage(context.Context, string, string, imap.EmailFilters) (imap.SearchPage, error) {
 	return imap.SearchPage{}, errors.New("search is not configured")
 }
+func (f *moveWire) GetEmail(_ context.Context, folder, id string) (*imap.Email, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	email, ok := f.mail[folder][id]
+	if !ok {
+		return nil, errors.New("message not found")
+	}
+	return &email, nil
+}
 func (f *moveWire) Closed() bool { return false }
 func (f *moveWire) Close() error { return nil }
 func (f *moveWire) ListFolders(context.Context) ([]string, error) {
