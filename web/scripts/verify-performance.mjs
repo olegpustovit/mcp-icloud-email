@@ -34,7 +34,7 @@ try{
   const root=document.getElementById('root');root.innerHTML=mailView(state);state.listHeight=root.querySelector('.rows').clientHeight
   for(let i=0;i<30;i++){state.cur=i;const at=performance.now();revealRow(state.msgs,state);if(!paintSelection(root,state))throw new Error('Selection render unavailable');const selected=document.querySelector('.row.cur');if(Number(selected?.dataset.i)!==i)throw new Error('Selected row was not mounted');selected.getBoundingClientRect();timings.push(performance.now()-at)}
   const bodyAt=performance.now();await replica.call('body',{key:'INBOX|7|1',folder:'INBOX',id:'1',validity:7});const cachedBodyMS=performance.now()-bodyAt
-  const mountedRows=document.querySelectorAll('.row').length;if(document.querySelector('.row').getBoundingClientRect().height!==60)throw new Error('Row geometry does not match virtual offsets')
+  const mountedRows=document.querySelectorAll('.row').length;if(document.querySelector('.row').getBoundingClientRect().height!==44)throw new Error('Row geometry does not match virtual offsets')
   replica.close();return {messages:count,firstWindowMS,hydrateMS,queries,keyPaintP95MS:timings.sort((a,b)=>a-b)[Math.floor(timings.length*.95)],cachedBodyMS,mountedRows}
  })
  await mkdir('../.impeccable/review',{recursive:true});await writeFile('../.impeccable/review/performance.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result,null,2))

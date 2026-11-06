@@ -456,6 +456,7 @@ func (s *Service) syncStatus(m *monitor, phase, mode, problem string) error {
 	return s.commit(m.ctx, m.owner, m.account, "system", "", []Change{{Entity: "status", Op: "put", Key: m.owner, Status: &status}})
 }
 func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, backfill bool, actor, txID string) error {
+	started := time.Now()
 	if m.ctx.Err() != nil {
 		return m.ctx.Err()
 	}
@@ -476,6 +477,7 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 	}
 	reset := previous.UIDValidity != 0 && previous.UIDValidity != info.UIDValidity
 	if previous.Ready && !backfill && !reset && wire.CondStore() && info.HighestModSeq > 0 && previous.HighestModSeq == info.HighestModSeq && previous.UIDNext == info.UIDNext && previous.Total == info.Total && previous.Unread == info.Unread {
+		slog.Info("mail sync reconcile", "folder", name, "duration_ms", time.Since(started).Milliseconds(), "fetched", 0, "flags", 0, "deleted", 0)
 		return nil
 	}
 	if reset {
@@ -532,11 +534,13 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 			}
 		}
 	}
+	fetched, flagsUpdated := 0, 0
 	if len(fetch) > 0 {
 		mail, err := wire.Fetch(name, fetch, 0, false)
 		if err != nil {
 			return err
 		}
+		fetched = len(mail)
 
 		prepared, merged, err := s.prepareBatch(m.ctx, m.owner, m.account, mail)
 		if err != nil {
@@ -613,6 +617,7 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 				if old.Fingerprint != next.Fingerprint {
 					changes = append(changes, Change{Entity: "msg", Op: "put", Key: next.Key, Message: &next, Before: &old})
 					known[uid] = next
+					flagsUpdated++
 				}
 			}
 		}
@@ -658,6 +663,13 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 		return err
 	}
 	m.folders[name] = folder
+	deleted := 0
+	for _, change := range changes {
+		if change.Entity == "msg" && change.Op == "del" {
+			deleted++
+		}
+	}
+	slog.Info("mail sync reconcile", "folder", name, "duration_ms", time.Since(started).Milliseconds(), "fetched", fetched, "flags", flagsUpdated, "deleted", deleted)
 	return nil
 }
 
