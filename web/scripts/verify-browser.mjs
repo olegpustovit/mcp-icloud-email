@@ -12,6 +12,7 @@ const now=new Date().toISOString()
 let signedIn=false, networkDown=false, remoteRequests=0
 let bootstrapFailures=5,bootstrapAttempts=0
 const waitEvent=name=>once(events,name,{signal:AbortSignal.timeout(10000)})
+const waitForBootstrapAttempts=attempts=>new Promise((resolve,reject)=>{const started=Date.now(),poll=()=>{if(bootstrapAttempts>=attempts)resolve();else if(Date.now()-started>30000)reject(new Error('Bootstrap attempt timeout'));else setTimeout(poll,50)};poll()})
 const saveSetting=(page,control,key,value)=>Promise.all([page.waitForResponse(response=>response.url().endsWith('/api/mail/preferences')&&response.request().method()==='PATCH'&&response.request().postDataJSON()[key]===value),control.click()])
 let prefs={theme:'light',signal:false,density:'default',readingFont:'sans',motion:'system',keyPreset:'gmail',keymap:{},notifications:'none',quietHours:false,quietStart:'22:00',quietEnd:'07:30',undoSeconds:10,remoteContent:'block',allowedSenders:[],stripTracking:true,vip:[],identities:[],rules:[]}
 const account={email:'browser-test@olegpustovit.com',icloud_email:'browser-test@icloud.com',connected:true}
@@ -53,7 +54,6 @@ const server=createServer(async(req,res)=>{
   if(url.pathname==='/api/mail/rules/apply'){events.emit('apply-rules',data);return json(202,{id:'fixture-apply'})}
   if(url.pathname==='/api/clients')return json(200,clients)
   if(url.pathname.startsWith('/api/clients/')&&req.method==='DELETE'){clients.splice(0,clients.length);return json(200,{})}
-  if(url.pathname==='/__bootstrap-state')return json(200,{attempts:bootstrapAttempts})
   if(url.pathname.startsWith('/api/mail/')){
    if(!signedIn)return json(401,{error:'login_required'})
    if(req.headers['x-mail-owner']!==account.email||req.headers['x-mail-account']!==account.icloud_email)return json(403,{error:'wrong_account'})
@@ -130,7 +130,7 @@ try{
  await page.locator('[data-a="auth:login"]').click()
  await page.getByLabel('Email',{exact:true}).fill(account.email);await page.getByLabel('Password',{exact:true}).fill('invalid-password');await page.locator('#auth-form button[type="submit"],#auth-form button:not([type])').click();await page.getByRole('alert').waitFor()
  await page.getByLabel('Password',{exact:true}).fill('test-password');await page.locator('#auth-form button:not([type])').click()
- await page.waitForFunction(async()=>{const response=await fetch('/__bootstrap-state');return (await response.json()).attempts===5})
+ await waitForBootstrapAttempts(5)
  assert.deepEqual(await page.evaluate(()=>new Promise((resolve,reject)=>{const request=indexedDB.open('terminal-mail:browser-test@olegpustovit.com:browser-test@icloud.com');request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result,tx=db.transaction(['meta','folders'],'readonly'),meta=tx.objectStore('meta').count(),folders=tx.objectStore('folders').count();tx.oncomplete=()=>{db.close();resolve({meta:meta.result,folders:folders.result})};tx.onerror=()=>reject(tx.error)}})),{meta:0,folders:0})
  await page.locator('.row').first().waitFor();await page.getByText('Please review the launch notes.',{exact:false}).waitFor()
  assert.equal(bootstrapAttempts,6,'bootstrap should succeed after five transient rejections')
