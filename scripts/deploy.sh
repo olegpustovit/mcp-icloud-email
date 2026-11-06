@@ -67,11 +67,11 @@ REMOTE
 curl -fsS https://mail.microapps.space/ >/dev/null
 curl -fsS https://mail.microapps.space/healthz/sync
 
-sleep 600
-for attempt in {1..3}; do
+# Pass as soon as iCloud and the mirror agree; give the post-restart import up to ~3 min.
+for attempt in {1..18}; do
   if python3 scripts/check-sync-parity.py; then break; fi
-  if [[ "$attempt" == 3 ]]; then exit 1; fi
-  sleep 30
+  if [[ "$attempt" == 18 ]]; then exit 1; fi
+  sleep 10
 done
 trap - ERR
 echo "Deploy PASS: $version"
