@@ -352,6 +352,73 @@ func TestTimedOutFetchReconnectsAndCompletesImport(t *testing.T) {
 	}
 }
 
+func TestTransportDropReconnectsWithoutServiceRestart(t *testing.T) {
+	s := testMirror(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	owner, account := "owner@example.com", "mirror@icloud.com"
+	first := &syncFake{mail: map[uint32]imap.Email{1: {ID: "1", Subject: "one", Date: time.Now()}}, validity: 7, next: 2, modseq: 1, closed: make(chan struct{})}
+	second := &syncFake{mail: map[uint32]imap.Email{
+		1: {ID: "1", Subject: "one", Date: time.Now()},
+		2: {ID: "2", Subject: "two", Date: time.Now()},
+	}, validity: 7, next: 3, modseq: 2, closed: make(chan struct{})}
+	dialed := make(chan *syncFake, 2)
+	networkRestored := make(chan struct{})
+	attempt := 0
+	s.dialSync = func(ctx context.Context, _, _ string, _ func()) (syncTransport, error) {
+		attempt++
+		if attempt == 1 {
+			dialed <- first
+			return first, nil
+		}
+		select {
+		case <-networkRestored:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		dialed <- second
+		return second, nil
+	}
+	if _, err := s.Mailbox(ctx, owner, "web"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WaitReady(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	if wire := <-dialed; wire != first {
+		t.Fatal("unexpected initial sync connection")
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	restoredAt := time.Now()
+	close(networkRestored)
+	select {
+	case wire := <-dialed:
+		if wire != second {
+			t.Fatal("unexpected reconnect transport")
+		}
+		if elapsed := time.Since(restoredAt); elapsed > 30*time.Second {
+			t.Fatalf("mail sync recovered after %v, want under 30s", elapsed)
+		}
+	case <-ctx.Done():
+		t.Fatal("sync did not reconnect after the transport was restored")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		count, err := s.db.Collection("mail_messages").CountDocuments(ctx, bson.M{"owner": owner, "account": account})
+		if err == nil && count == 2 {
+			status, err := s.Status(ctx, owner, account)
+			if err == nil && status.Phase == "live" {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("same service instance did not restore mailbox parity after reconnect")
+}
+
 func TestJournalRecoveryAndThreading(t *testing.T) {
 	s := testMirror(t)
 	ctx := context.Background()
