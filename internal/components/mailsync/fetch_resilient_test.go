@@ -26,7 +26,7 @@ func TestFetchResilientIsolatesAndQuarantinesOneUID(t *testing.T) {
 		return messages, nil
 	}
 	rawHeader := func(uid uint32) (imap.Email, error) { return imap.Email{ID: fmt.Sprint(uid)}, nil }
-	messages, broken, err := fetchResilient(uids, fetch, rawHeader, make(chan struct{}))
+	messages, broken, err := fetchResilient(uids, fetch, rawHeader, make(chan struct{}), 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,8 +40,26 @@ func TestFetchResilientDoesNotSplitServerErrors(t *testing.T) {
 	_, _, err := fetchResilient([]uint32{1, 2, 3}, func([]uint32) ([]imap.Email, error) {
 		calls++
 		return nil, errors.New("server unavailable")
-	}, func(uint32) (imap.Email, error) { t.Fatal("unexpected raw-header fallback"); return imap.Email{}, nil }, make(chan struct{}))
+	}, func(uint32) (imap.Email, error) { t.Fatal("unexpected raw-header fallback"); return imap.Email{}, nil }, make(chan struct{}), 50)
 	if err == nil || calls != 1 {
 		t.Fatalf("got err %v after %d fetches; want one failed batch", err, calls)
+	}
+}
+
+func TestFetchResilientUsesLargerFlagBatchSize(t *testing.T) {
+	uids := make([]uint32, 2501)
+	for i := range uids {
+		uids[i] = uint32(i + 1)
+	}
+	var batches []int
+	_, _, err := fetchResilient(uids, func(batch []uint32) ([]imap.Email, error) {
+		batches = append(batches, len(batch))
+		return nil, nil
+	}, nil, make(chan struct{}), 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batches) != 3 || batches[0] != 1000 || batches[1] != 1000 || batches[2] != 501 {
+		t.Fatalf("got batches %v", batches)
 	}
 }

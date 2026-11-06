@@ -19,18 +19,22 @@ func fetchMailboxResilient(wire syncTransport, name string, uids []uint32, since
 	if fetcher, ok := wire.(rawHeaderFetcher); ok {
 		rawHeader = func(uid uint32) (imap.Email, error) { return fetcher.FetchEnvelope(name, uid) }
 	}
+	batchSize := 50
+	if flagsOnly {
+		batchSize = 1000
+	}
 	messages, broken, err := fetchResilient(uids, func(batch []uint32) ([]imap.Email, error) {
 		return wire.Fetch(name, batch, since, flagsOnly)
-	}, rawHeader, wire.Closed())
+	}, rawHeader, wire.Closed(), batchSize)
 	slog.Info("mail sync fetch", "folder", name, "uid_count", len(uids), "flags_only", flagsOnly, "duration_ms", time.Since(started).Milliseconds(), "error", err)
 	return messages, broken, err
 }
 
-func fetchResilient(uids []uint32, fetch func([]uint32) ([]imap.Email, error), rawHeader func(uint32) (imap.Email, error), closed <-chan struct{}) ([]imap.Email, map[uint32]bool, error) {
+func fetchResilient(uids []uint32, fetch func([]uint32) ([]imap.Email, error), rawHeader func(uint32) (imap.Email, error), closed <-chan struct{}, batchSize int) ([]imap.Email, map[uint32]bool, error) {
 	var messages []imap.Email
 	broken := map[uint32]bool{}
-	for start := 0; start < len(uids); start += 50 {
-		end := min(start+50, len(uids))
+	for start := 0; start < len(uids); start += batchSize {
+		end := min(start+batchSize, len(uids))
 		batch, quarantined, err := fetchSplit(uids[start:end], fetch, rawHeader, closed)
 		if err != nil {
 			return nil, nil, err
