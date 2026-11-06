@@ -34,7 +34,8 @@ rollback() {
 set -euo pipefail
 cd /home/snowbear/ci/mail
 cp -p mail-server mail-server.failed
-cp -p mail-server.previous mail-server
+cp -p mail-server.previous mail-server.rollback
+mv -f mail-server.rollback mail-server
 smdctl restart mail
 REMOTE
   fi
