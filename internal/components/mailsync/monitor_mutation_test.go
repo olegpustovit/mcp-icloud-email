@@ -3,6 +3,7 @@ package mailsync
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -33,5 +34,20 @@ func TestBlockedMutationHonorsRequestDeadline(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("monitor remained blocked for %v", elapsed)
+	}
+}
+
+func TestWatchdogRestartsAfterStaleProgress(t *testing.T) {
+	var progress atomic.Int64
+	progress.Store(time.Now().Add(-time.Second).UnixNano())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stalled := make(chan struct{})
+	stop := watchProgress(ctx, &progress, time.Millisecond, 10*time.Millisecond, func() { close(stalled) })
+	defer stop()
+	select {
+	case <-stalled:
+	case <-time.After(time.Second):
+		t.Fatal("stale sync progress did not trigger the watchdog")
 	}
 }

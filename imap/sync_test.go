@@ -185,6 +185,17 @@ func TestVanishedUnilateralResponseWakesSync(t *testing.T) {
 	}
 }
 
+func TestSyncOptionsWakeOnVanished(t *testing.T) {
+	wake := make(chan struct{}, 1)
+	handler := syncOptions(func() { wake <- struct{}{} }).UnilateralDataHandler
+	handler.Vanished(imapv2.UIDSet{}, false)
+	select {
+	case <-wake:
+	case <-time.After(time.Second):
+		t.Fatal("VANISHED did not wake folder reconciliation")
+	}
+}
+
 func TestPartialMIMESnippet(t *testing.T) {
 	for _, test := range []struct{ header, body, want string }{
 		{"Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n", "SGVsbG8gd29ybGQ=", "Hello world"},
