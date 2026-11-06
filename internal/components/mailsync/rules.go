@@ -481,7 +481,7 @@ func (s *Service) advanceRule(ctx context.Context, job RuleJob) error {
 					err = box.MoveWithValidity(actionCtx, job.Source, target)
 				}
 			case "read", "flag":
-				err = box.change(actionCtx, []string{job.Source.Folder}, func(c *Connection) error {
+				err = box.change(actionCtx, []string{job.Source.Folder}, func(ctx context.Context, c *Connection) error {
 					validity, e := c.Mail.UIDValidity(ctx, job.Source.Folder)
 					if e != nil {
 						return e

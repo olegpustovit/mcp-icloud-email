@@ -35,7 +35,7 @@ type refreshRequest struct {
 	folders     []string
 	actor, txID string
 	done        chan error
-	apply       func() error
+	apply       func(context.Context) error
 	ctx         context.Context
 }
 type monitor struct {
@@ -125,7 +125,12 @@ func (s *Service) WaitReady(ctx context.Context, owner string) error {
 func (s *Service) Refresh(ctx context.Context, owner, actor, txID string, folders ...string) error {
 	return s.change(ctx, owner, actor, txID, folders, nil)
 }
-func (s *Service) change(ctx context.Context, owner, actor, txID string, folders []string, apply func() error) error {
+func (s *Service) change(ctx context.Context, owner, actor, txID string, folders []string, apply func(context.Context) error) error {
+	var cancel context.CancelFunc
+	if apply != nil {
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 	m, err := s.Start(ctx, owner)
 	if err != nil {
 		return err
@@ -386,7 +391,7 @@ func (s *Service) processRequest(m *monitor, wire syncTransport, request refresh
 	}
 	var applied error
 	if request.apply != nil {
-		applied = request.apply()
+		applied = request.apply(request.ctx)
 	}
 	var sent *smtp.SentCopyError
 	var saved *imap.DraftSavedError

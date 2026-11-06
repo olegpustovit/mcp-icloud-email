@@ -53,7 +53,7 @@ func (s *Service) UndoActivity(ctx context.Context, owner, account string, seque
 	if before == nil || after == nil || change.Op != "put" || before.Key != after.Key {
 		return errors.New("this activity cannot be reversed")
 	}
-	return mailbox.change(ctx, []string{after.Folder}, func(c *Connection) error {
+	return mailbox.change(ctx, []string{after.Folder}, func(ctx context.Context, c *Connection) error {
 		var current Metadata
 		if err := s.db.Collection("mail_messages").FindOne(ctx, bson.M{"_id": after.Key, "owner": owner, "account": account}).Decode(&current); err != nil {
 			return err

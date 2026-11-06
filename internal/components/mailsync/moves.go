@@ -58,7 +58,7 @@ func (s *Service) move(ctx context.Context, owner, account, actor, transaction s
 		return errors.New("invalid transaction")
 	}
 	box := &Mailbox{s: s, owner: owner, account: account, actor: actor}
-	return s.change(ctx, owner, actor, transaction, nil, func() error {
+	return s.change(ctx, owner, actor, transaction, nil, func(ctx context.Context) error {
 		connection, release, err := s.Acquire(ctx, owner)
 		if err != nil {
 			return err
@@ -205,7 +205,7 @@ func (m *Mailbox) Snooze(ctx context.Context, from imap.Location, until *time.Ti
 		if count == 0 {
 			return m.s.move(ctx, m.owner, m.account, m.actor, transactionID(ctx), from, "Snoozed", "snooze", until)
 		}
-		return m.change(ctx, nil, func(c *Connection) error {
+		return m.change(ctx, nil, func(ctx context.Context, c *Connection) error {
 			var job Move
 			if err := m.s.db.Collection("mail_moves").FindOne(ctx, bson.M{"owner": m.owner, "account": m.account, "state": "snoozed", "current.folder": from.Folder, "current.uid": from.ID, "current.validity": from.Validity}).Decode(&job); err != nil {
 				return err
@@ -224,7 +224,7 @@ func (m *Mailbox) Snooze(ctx context.Context, from imap.Location, until *time.Ti
 }
 func (m *Mailbox) returnMove(ctx context.Context, originalTransaction string, undo bool) error {
 	id := identity(m.owner, m.account, originalTransaction)
-	return m.change(ctx, nil, func(c *Connection) error {
+	return m.change(ctx, nil, func(ctx context.Context, c *Connection) error {
 		if err := m.advanceMove(ctx, c, id); err != nil {
 			return err
 		}
@@ -288,7 +288,7 @@ func (s *Service) runMove(ctx context.Context) error {
 	if job.State == "snoozed" {
 		err = box.returnMove(ctx, job.Transaction, false)
 	} else {
-		err = box.change(ctx, nil, func(c *Connection) error { return box.advanceMove(ctx, c, job.ID) })
+		err = box.change(ctx, nil, func(ctx context.Context, c *Connection) error { return box.advanceMove(ctx, c, job.ID) })
 	}
 	if err != nil {
 		next := time.Now().Add(time.Minute)

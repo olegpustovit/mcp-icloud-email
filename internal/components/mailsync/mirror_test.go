@@ -237,7 +237,7 @@ func TestMirrorImportDeltaExpungeAndUIDReset(t *testing.T) {
 	if !found {
 		t.Fatal("flag delta was not journaled")
 	}
-	if err = s.change(ctx, owner, "mcp:test-client", "agent-tx", []string{"INBOX"}, func() error {
+	if err = s.change(ctx, owner, "mcp:test-client", "agent-tx", []string{"INBOX"}, func(context.Context) error {
 		fake.change(func() {
 			mail := fake.mail[650]
 			mail.Unread = false

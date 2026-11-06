@@ -51,7 +51,7 @@ func (s *Service) CancelRename(ctx context.Context, owner, id string) error {
 	if err != nil {
 		return err
 	}
-	return box.changeCommand(ctx, nil, true, func(c *Connection) error {
+	return box.changeCommand(ctx, nil, true, func(ctx context.Context, c *Connection) error {
 		var op folderOperation
 		filter := bson.M{"_id": id, "owner": owner, "account": box.account, "state": "pending", "references_updated": bson.M{"$ne": true}}
 		if err := s.db.Collection("mail_folder_ops").FindOne(ctx, filter).Decode(&op); err != nil {

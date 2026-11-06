@@ -210,11 +210,11 @@ func (m *Mailbox) GetAttachment(ctx context.Context, folder, id, filename string
 	}
 	return connection.Mail.GetAttachment(ctx, folder, id, filename)
 }
-func (m *Mailbox) change(ctx context.Context, folders []string, apply func(*Connection) error) error {
+func (m *Mailbox) change(ctx context.Context, folders []string, apply func(context.Context, *Connection) error) error {
 	return m.changeCommand(ctx, folders, false, apply)
 }
-func (m *Mailbox) changeCommand(ctx context.Context, folders []string, allowRename bool, apply func(*Connection) error) error {
-	return m.s.change(ctx, m.owner, m.actor, transactionID(ctx), folders, func() error {
+func (m *Mailbox) changeCommand(ctx context.Context, folders []string, allowRename bool, apply func(context.Context, *Connection) error) error {
+	return m.s.change(ctx, m.owner, m.actor, transactionID(ctx), folders, func(ctx context.Context) error {
 		connection, release, err := m.s.Acquire(ctx, m.owner)
 		if err != nil {
 			return err
@@ -228,14 +228,14 @@ func (m *Mailbox) changeCommand(ctx context.Context, folders []string, allowRena
 				return err
 			}
 		}
-		return apply(connection)
+		return apply(ctx, connection)
 	})
 }
 func (m *Mailbox) MarkRead(ctx context.Context, folder, id string, read bool) error {
-	return m.change(ctx, []string{folder}, func(c *Connection) error { return c.Mail.MarkRead(ctx, folder, id, read) })
+	return m.change(ctx, []string{folder}, func(ctx context.Context, c *Connection) error { return c.Mail.MarkRead(ctx, folder, id, read) })
 }
 func (m *Mailbox) FlagEmail(ctx context.Context, folder, id, kind, color string) error {
-	return m.change(ctx, []string{folder}, func(c *Connection) error { return c.Mail.FlagEmail(ctx, folder, id, kind, color) })
+	return m.change(ctx, []string{folder}, func(ctx context.Context, c *Connection) error { return c.Mail.FlagEmail(ctx, folder, id, kind, color) })
 }
 func (m *Mailbox) MoveEmail(ctx context.Context, from, to, id string) error {
 	validity, err := m.UIDValidity(ctx, from)
@@ -257,10 +257,10 @@ func (m *Mailbox) DeleteEmail(ctx context.Context, folder, id string, permanent 
 		}
 		return errors.New("trash mailbox unavailable")
 	}
-	return m.change(ctx, []string{folder}, func(c *Connection) error { return c.Mail.DeleteEmail(ctx, folder, id, permanent) })
+	return m.change(ctx, []string{folder}, func(ctx context.Context, c *Connection) error { return c.Mail.DeleteEmail(ctx, folder, id, permanent) })
 }
 func (m *Mailbox) CreateFolder(ctx context.Context, name, parent string) error {
-	return m.change(ctx, nil, func(c *Connection) error { return c.Mail.CreateFolder(ctx, name, parent) })
+	return m.change(ctx, nil, func(ctx context.Context, c *Connection) error { return c.Mail.CreateFolder(ctx, name, parent) })
 }
 func (m *Mailbox) DeleteFolder(ctx context.Context, name string, force bool) (empty bool, count int, err error) {
 	folders, err := m.s.Folders(ctx, m.owner, m.account)
@@ -272,11 +272,17 @@ func (m *Mailbox) DeleteFolder(ctx context.Context, name string, force bool) (em
 			return false, 0, errors.New("system mailboxes cannot be deleted")
 		}
 	}
-	err = m.change(ctx, nil, func(c *Connection) error { empty, count, err = c.Mail.DeleteFolder(ctx, name, force); return err })
+	err = m.change(ctx, nil, func(ctx context.Context, c *Connection) error {
+		empty, count, err = c.Mail.DeleteFolder(ctx, name, force)
+		return err
+	})
 	return
 }
 func (m *Mailbox) SaveDraft(ctx context.Context, from string, to []string, subject, body string, opts imap.DraftOptions) (id string, err error) {
-	err = m.change(ctx, m.roleFolders(ctx, "drafts"), func(c *Connection) error { id, err = c.Mail.SaveDraft(ctx, from, to, subject, body, opts); return err })
+	err = m.change(ctx, m.roleFolders(ctx, "drafts"), func(ctx context.Context, c *Connection) error {
+		id, err = c.Mail.SaveDraft(ctx, from, to, subject, body, opts)
+		return err
+	})
 	return
 }
 
@@ -294,7 +300,7 @@ func (m *Mailbox) roleFolders(ctx context.Context, role string) []string {
 	return nil
 }
 func (m *Mailbox) SendEmail(ctx context.Context, from string, to []string, subject, body string, opts smtp.SendOptions) error {
-	return m.change(ctx, nil, func(c *Connection) error {
+	return m.change(ctx, nil, func(ctx context.Context, c *Connection) error {
 		identity, err := m.s.SenderIdentity(ctx, m.owner, from)
 		if err != nil {
 			return err
@@ -305,7 +311,7 @@ func (m *Mailbox) SendEmail(ctx context.Context, from string, to []string, subje
 	})
 }
 func (m *Mailbox) ReplyToEmail(ctx context.Context, original *imap.Email, body string, all bool, opts smtp.SendOptions) error {
-	return m.change(ctx, nil, func(c *Connection) error {
+	return m.change(ctx, nil, func(ctx context.Context, c *Connection) error {
 		identity, err := m.s.SenderIdentity(ctx, m.owner, opts.From)
 		if err != nil {
 			return err

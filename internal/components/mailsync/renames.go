@@ -53,7 +53,7 @@ func (m *Mailbox) RenameFolder(ctx context.Context, from, to string) error {
 	if transaction == "" {
 		transaction = auth.Random()
 	}
-	return m.changeCommand(ctx, nil, true, func(c *Connection) error {
+	return m.changeCommand(ctx, nil, true, func(ctx context.Context, c *Connection) error {
 		id := identity(m.owner, m.account, transaction)
 		var op folderOperation
 		err := m.s.db.Collection("mail_folder_ops").FindOne(ctx, bson.M{"_id": id, "owner": m.owner, "account": m.account}).Decode(&op)
@@ -314,7 +314,7 @@ func (s *Service) runRename(ctx context.Context) error {
 		return err
 	}
 	if err == nil {
-		err = m.changeCommand(ctx, nil, true, func(c *Connection) error { return s.applyRename(ctx, c, op) })
+		err = m.changeCommand(ctx, nil, true, func(ctx context.Context, c *Connection) error { return s.applyRename(ctx, c, op) })
 	}
 	if err != nil {
 		_, updateErr := s.db.Collection("mail_folder_ops").UpdateOne(context.WithoutCancel(ctx), bson.M{"_id": op.ID, "state": "pending"}, bson.M{"$set": bson.M{"next_attempt": time.Now().Add(time.Minute), "error": cutText(err.Error(), 500)}})
