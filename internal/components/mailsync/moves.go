@@ -59,7 +59,7 @@ func (s *Service) move(ctx context.Context, owner, account, actor, transaction s
 	}
 	box := &Mailbox{s: s, owner: owner, account: account, actor: actor}
 	return s.change(ctx, owner, actor, transaction, nil, func(ctx context.Context) error {
-		connection, release, err := s.Acquire(ctx, owner)
+		connection, release, err := s.acquireForActor(ctx, owner, actor)
 		if err != nil {
 			return err
 		}

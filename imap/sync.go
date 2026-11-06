@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	imapv2 "github.com/emersion/go-imap/v2"
@@ -28,6 +29,34 @@ import (
 type SyncClient struct {
 	wire       *imapclient.Client
 	stopCancel func() bool
+	selected   string
+	selectData *imapv2.SelectData
+	events     chan SyncEvent
+	selectedTo *atomic.Value
+	qresync    bool
+}
+
+type SyncEvent struct {
+	Kind    string
+	Folder  string
+	UIDs    imapv2.UIDSet
+	Earlier bool
+}
+
+func (e SyncEvent) HasUID(uid uint32) bool {
+	return e.UIDs.Contains(imapv2.UID(uid))
+}
+
+func (e SyncEvent) Numbers() ([]uint32, bool) {
+	nums, ok := e.UIDs.Nums()
+	if !ok {
+		return nil, false
+	}
+	result := make([]uint32, len(nums))
+	for i, uid := range nums {
+		result[i] = uint32(uid)
+	}
+	return result, true
 }
 
 func syncCommand[T any](c *SyncClient, name string, timeout time.Duration, run func() (T, error)) (T, error) {
@@ -74,25 +103,68 @@ type StorageQuota struct {
 }
 
 func syncOptions(notify func()) *imapclient.Options {
+	return syncOptionsWithEvents(notify, nil, nil)
+}
+
+func syncOptionsWithEvents(notify func(), events chan<- SyncEvent, selected *atomic.Value) *imapclient.Options {
 	n := func() {
 		if notify != nil {
 			notify()
 		}
 	}
+	emit := func(kind string, uids imapv2.UIDSet, earlier bool) {
+		if events != nil {
+			folder := ""
+			if selected != nil {
+				if value := selected.Load(); value != nil {
+					folder, _ = value.(string)
+				}
+			}
+			select {
+			case events <- SyncEvent{Kind: kind, Folder: folder, UIDs: uids, Earlier: earlier}:
+				return
+			default:
+			}
+		}
+		n()
+	}
 	return &imapclient.Options{Dialer: &net.Dialer{Timeout: timeout}, WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, UnilateralDataHandler: &imapclient.UnilateralDataHandler{
-		Mailbox: func(*imapclient.UnilateralDataMailbox) { n() }, Expunge: func(uint32) { n() }, Fetch: func(*imapclient.FetchMessageData) { n() }, Vanished: func(imapv2.UIDSet, bool) { n() },
+		Mailbox: func(*imapclient.UnilateralDataMailbox) { emit("mailbox", nil, false) },
+		Expunge: func(uint32) { emit("expunge", nil, false) },
+		Fetch: func(message *imapclient.FetchMessageData) {
+			var uids imapv2.UIDSet
+			for item := message.Next(); item != nil; item = message.Next() {
+				if data, ok := item.(imapclient.FetchItemDataUID); ok {
+					uids.AddNum(data.UID)
+				}
+			}
+			emit("fetch", uids, false)
+		},
+		Vanished: func(uids imapv2.UIDSet, earlier bool) {
+			emit("vanished", uids, earlier)
+		},
 	}}
 }
 func NewSyncClient(ctx context.Context, address, password string, notify func()) (*SyncClient, error) {
-	wire, err := imapclient.DialTLS(net.JoinHostPort(imapServer, strconv.Itoa(imapPort)), syncOptions(notify))
+	events := make(chan SyncEvent, 64)
+	selected := &atomic.Value{}
+	selected.Store("")
+	wire, err := imapclient.DialTLS(net.JoinHostPort(imapServer, strconv.Itoa(imapPort)), syncOptionsWithEvents(notify, events, selected))
 	if err != nil {
 		return nil, fmt.Errorf("connect IMAP sync: %w", err)
 	}
-	c := &SyncClient{wire: wire}
+	c := &SyncClient{wire: wire, events: events, selectedTo: selected}
 	c.stopCancel = context.AfterFunc(ctx, func() { _ = wire.Close() })
 	if _, err = syncCommand(c, "LOGIN", syncCommandTimeout, func() (struct{}, error) { return struct{}{}, wire.Login(address, password).Wait() }); err != nil {
 		_ = c.Close()
 		return nil, fmt.Errorf("%w: %v", ErrSyncAuthentication, err)
+	}
+	if wire.Caps().Has(imapv2.CapEnable) && wire.Caps().Has(imapv2.CapQResync) {
+		if _, err = syncCommand(c, "ENABLE QRESYNC", syncCommandTimeout, func() (*imapclient.EnableData, error) { return wire.Enable(imapv2.CapQResync).Wait() }); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		c.qresync = true
 	}
 	return c, nil
 }
@@ -102,13 +174,45 @@ func (c *SyncClient) Close() error {
 	}
 	return c.wire.Close()
 }
-func (c *SyncClient) Closed() <-chan struct{} { return c.wire.Closed() }
-func (c *SyncClient) CondStore() bool         { return c.wire.Caps().Has(imapv2.CapCondStore) }
-func (c *SyncClient) CanIdle() bool           { return c.wire.Caps().Has(imapv2.CapIdle) }
+func (c *SyncClient) Closed() <-chan struct{}  { return c.wire.Closed() }
+func (c *SyncClient) Events() <-chan SyncEvent { return c.events }
+func (c *SyncClient) CondStore() bool          { return c.wire.Caps().Has(imapv2.CapCondStore) }
+func (c *SyncClient) CanIdle() bool            { return c.wire.Caps().Has(imapv2.CapIdle) }
+func (c *SyncClient) selectFolder(name string) (*imapv2.SelectData, error) {
+	return c.selectFolderOptions(name, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()})
+}
+
+func (c *SyncClient) selectFolderOptions(name string, options *imapv2.SelectOptions) (*imapv2.SelectData, error) {
+	if c.selected == name && c.selectData != nil {
+		return c.selectData, nil
+	}
+	if c.selectedTo != nil {
+		c.selectedTo.Store(name)
+	}
+	data, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
+		return c.wire.Select(name, options).Wait()
+	})
+	if err != nil {
+		c.selected, c.selectData = "", nil
+		if c.selectedTo != nil {
+			c.selectedTo.Store("")
+		}
+		return nil, err
+	}
+	c.selected, c.selectData = name, data
+	return data, nil
+}
+
+func (c *SyncClient) SelectQResync(name string, uidValidity uint32, modSeq uint64) error {
+	options := &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}
+	if c.qresync && uidValidity > 0 && modSeq > 0 {
+		options.QResync = &imapv2.SelectOptionsQResync{UIDValidity: uidValidity, ModSeq: modSeq}
+	}
+	_, err := c.selectFolderOptions(name, options)
+	return err
+}
 func (c *SyncClient) StartIdle() (func() error, error) {
-	if _, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
-		return c.wire.Select("INBOX", &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
-	}); err != nil {
+	if _, err := c.selectFolder("INBOX"); err != nil {
 		return nil, err
 	}
 	idle, err := syncCommand(c, "IDLE", syncCommandTimeout, c.wire.Idle)
@@ -126,6 +230,59 @@ func (c *SyncClient) StartIdle() (func() error, error) {
 		})
 		return stopErr
 	}, nil
+}
+func (c *SyncClient) FolderStatuses() ([]FolderInfo, error) {
+	status := &imapv2.StatusOptions{NumMessages: true, NumUnseen: true, UIDNext: true, UIDValidity: true, HighestModSeq: c.CondStore()}
+	if !c.wire.Caps().Has(imapv2.CapListStatus) {
+		folders, err := c.Folders()
+		if err != nil {
+			return nil, err
+		}
+		for i := range folders {
+			updated, err := c.Status(folders[i].Name)
+			if err != nil {
+				return nil, err
+			}
+			updated.Role, updated.Delimiter, updated.Attributes = folders[i].Role, folders[i].Delimiter, folders[i].Attributes
+			folders[i] = updated
+		}
+		return folders, nil
+	}
+	rows, err := syncCommand(c, "LIST STATUS", syncCommandTimeout, func() ([]*imapv2.ListData, error) {
+		return c.wire.List("", "*", &imapv2.ListOptions{ReturnStatus: status, ReturnSpecialUse: c.wire.Caps().Has(imapv2.CapSpecialUse)}).Collect()
+	})
+	if err != nil {
+		return nil, err
+	}
+	folders := make([]FolderInfo, 0, len(rows))
+	for _, row := range rows {
+		if slices.Contains(row.Attrs, imapv2.MailboxAttrNoSelect) || row.Status == nil {
+			continue
+		}
+		attrs := make([]string, len(row.Attrs))
+		for i, attr := range row.Attrs {
+			attrs[i] = string(attr)
+		}
+		data := row.Status
+		folder := FolderInfo{Name: row.Mailbox, Role: folderRole(row.Mailbox, attrs), Delimiter: string(row.Delim), UIDValidity: data.UIDValidity, UIDNext: uint32(data.UIDNext), HighestModSeq: data.HighestModSeq, Attributes: attrs}
+		if data.NumMessages != nil {
+			folder.Total = *data.NumMessages
+		}
+		if data.NumUnseen != nil {
+			folder.Unread = *data.NumUnseen
+		}
+		folders = append(folders, folder)
+	}
+	slices.SortStableFunc(folders, func(a, b FolderInfo) int {
+		if a.Role == "inbox" {
+			return -1
+		}
+		if b.Role == "inbox" {
+			return 1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return folders, nil
 }
 func (c *SyncClient) Folders() ([]FolderInfo, error) {
 	options := &imapv2.ListOptions{ReturnSpecialUse: c.wire.Caps().Has(imapv2.CapSpecialUse)}
@@ -185,9 +342,7 @@ func (c *SyncClient) Status(name string) (FolderInfo, error) {
 	return f, nil
 }
 func (c *SyncClient) UIDs(folder string) ([]uint32, error) {
-	if _, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
-		return c.wire.Select(folder, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
-	}); err != nil {
+	if _, err := c.selectFolder(folder); err != nil {
 		return nil, err
 	}
 	data, err := syncCommand(c, "UID SEARCH", syncCommandTimeout, func() (*imapv2.SearchData, error) { return c.wire.UIDSearch(&imapv2.SearchCriteria{}, nil).Wait() })
@@ -206,9 +361,7 @@ func (c *SyncClient) Fetch(folder string, uids []uint32, since uint64, flagsOnly
 	if len(uids) == 0 {
 		return []Email{}, nil
 	}
-	selected, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
-		return c.wire.Select(folder, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
-	})
+	selected, err := c.selectFolder(folder)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +398,30 @@ func (c *SyncClient) Fetch(folder string, uids []uint32, since uint64, flagsOnly
 	}
 	return out, nil
 }
+
+func (c *SyncClient) FetchEnvelope(folder string, uid uint32) (Email, error) {
+	selected, err := c.selectFolder(folder)
+	if err != nil {
+		return Email{}, err
+	}
+	var set imapv2.UIDSet
+	set.AddNum(imapv2.UID(uid))
+	header := &imapv2.FetchItemBodySection{Specifier: imapv2.PartSpecifierHeader, Peek: true}
+	options := &imapv2.FetchOptions{UID: true, Flags: true, Envelope: true, InternalDate: true, RFC822Size: true, BodySection: []*imapv2.FetchItemBodySection{header}}
+	rows, err := syncCommand(c, "UID FETCH HEADER", syncCommandTimeout, func() ([]*imapclient.FetchMessageBuffer, error) {
+		return c.wire.Fetch(set, options).Collect()
+	})
+	if err != nil {
+		return Email{}, err
+	}
+	if len(rows) != 1 || uint32(rows[0].UID) != uid {
+		return Email{}, errors.New("raw header FETCH returned no matching UID")
+	}
+	email := syncEmail(rows[0], folder, selected.UIDValidity)
+	readSyncHeaders(&email, rows[0].FindBodySection(header))
+	return email, nil
+}
+
 func (c *SyncClient) Quota() (*StorageQuota, error) {
 	if !c.wire.Caps().Has(imapv2.CapQuota) {
 		return nil, nil

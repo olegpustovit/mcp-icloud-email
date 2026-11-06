@@ -19,6 +19,11 @@ type Mailbox struct {
 	s                     *Service
 	owner, account, actor string
 }
+
+func (m *Mailbox) acquire(ctx context.Context) (*Connection, func(), error) {
+	return m.s.acquireForActor(ctx, m.owner, m.actor)
+}
+
 type transactionKey struct{}
 
 func Transaction(ctx context.Context, id string) context.Context {
@@ -54,7 +59,7 @@ func (m *Mailbox) ListFolders(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 func (m *Mailbox) UIDValidity(ctx context.Context, folder string) (uint32, error) {
-	connection, release, err := m.s.Acquire(ctx, m.owner)
+	connection, release, err := m.acquire(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -111,7 +116,7 @@ func (m *Mailbox) SearchEmails(ctx context.Context, folder, query string, filter
 	}
 	// During import and for full-body text queries, keep the existing IMAP search contract.
 	if !f.Complete || query != "" {
-		connection, release, err := m.s.Acquire(ctx, m.owner)
+		connection, release, err := m.acquire(ctx)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -163,7 +168,7 @@ func (m *Mailbox) CountEmails(ctx context.Context, folder string, filters imap.E
 		return int(f.Total), nil
 	}
 	if !f.Complete {
-		connection, release, err := m.s.Acquire(ctx, m.owner)
+		connection, release, err := m.acquire(ctx)
 		if err != nil {
 			return 0, err
 		}
@@ -177,7 +182,13 @@ func (m *Mailbox) CountEmails(ctx context.Context, folder string, filters imap.E
 	return int(count), err
 }
 func (m *Mailbox) GetEmail(ctx context.Context, folder, id string) (*imap.Email, error) {
-	connection, release, err := m.s.Acquire(ctx, m.owner)
+	var metadata Metadata
+	metadataErr := m.s.db.Collection("mail_messages").FindOne(ctx, bson.M{"owner": m.owner, "account": m.account, "email.folder": folder, "email.id": id}).Decode(&metadata)
+	if metadataErr == nil && metadata.BodyCached {
+		cached := metadata.Email
+		return &cached, nil
+	}
+	connection, release, err := m.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -190,17 +201,19 @@ func (m *Mailbox) GetEmail(ctx context.Context, folder, id string) (*imap.Email,
 		return nil, err
 	}
 	email.Folder = folder
-	var metadata Metadata
-	if err = m.s.db.Collection("mail_messages").FindOne(ctx, bson.M{"_id": messageKey(m.owner, m.account, folder, email.UIDValidity, id), "owner": m.owner, "account": m.account}).Decode(&metadata); err == nil {
+	if metadataErr == nil {
 		email.ThreadID = metadata.ThreadID
 		email.ListID = metadata.ListID
 		email.Unsubscribe = metadata.Unsubscribe
 		email.UnsubscribePost = metadata.UnsubscribePost
 	}
+	if email.Size <= 8<<20 {
+		_, _ = m.s.db.Collection("mail_messages").UpdateOne(ctx, bson.M{"_id": messageKey(m.owner, m.account, folder, email.UIDValidity, id), "owner": m.owner, "account": m.account}, bson.M{"$set": bson.M{"body_cached": true, "email.bodyplain": email.BodyPlain, "email.bodyhtml": email.BodyHTML, "email.inlineimages": email.InlineImages}})
+	}
 	return email, nil
 }
 func (m *Mailbox) GetAttachment(ctx context.Context, folder, id, filename string) (*imap.AttachmentData, error) {
-	connection, release, err := m.s.Acquire(ctx, m.owner)
+	connection, release, err := m.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +228,7 @@ func (m *Mailbox) change(ctx context.Context, folders []string, apply func(conte
 }
 func (m *Mailbox) changeCommand(ctx context.Context, folders []string, allowRename bool, apply func(context.Context, *Connection) error) error {
 	return m.s.change(ctx, m.owner, m.actor, transactionID(ctx), folders, func(ctx context.Context) error {
-		connection, release, err := m.s.Acquire(ctx, m.owner)
+		connection, release, err := m.acquire(ctx)
 		if err != nil {
 			return err
 		}

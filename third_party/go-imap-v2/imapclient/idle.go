@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const idleRestartInterval = 28 * time.Minute
+const idleRestartInterval = 25 * time.Minute
 
 // Idle sends an IDLE command.
 //

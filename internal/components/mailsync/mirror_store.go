@@ -31,6 +31,8 @@ type Metadata struct {
 	SnoozeError     string     `bson:"snooze_error,omitempty" json:"snoozeError,omitempty"`
 	MoveTransaction string     `bson:"move_transaction,omitempty" json:"moveTransaction,omitempty"`
 	MoveActor       string     `bson:"move_actor,omitempty" json:"moveActor,omitempty"`
+	BodyCached      bool       `bson:"body_cached,omitempty" json:"-"`
+	Broken          bool       `bson:"broken,omitempty" json:"-"`
 }
 type Folder struct {
 	Key             string `bson:"_id" json:"key"`

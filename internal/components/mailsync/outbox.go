@@ -262,7 +262,7 @@ func (s *Service) deliverNext(ctx context.Context) error {
 	return nil
 }
 func (s *Service) deliver(ctx context.Context, job Outbox) error {
-	connection, release, err := s.Acquire(ctx, job.Owner)
+	connection, release, err := s.AcquireBulk(ctx, job.Owner)
 	if err != nil {
 		return err
 	}

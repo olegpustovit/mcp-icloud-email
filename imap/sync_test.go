@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/mail"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestSyncTransportMetadataPeekAndIDLE(t *testing.T) {
 	backend.AddUser(user)
 	server := imapserver.New(&imapserver.Options{NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
 		return backend.NewSession(), nil, nil
-	}, InsecureAuth: true, Caps: imapv2.CapSet{imapv2.CapIMAP4rev1: {}, imapv2.CapIdle: {}}})
+	}, InsecureAuth: true, Caps: imapv2.CapSet{imapv2.CapIMAP4rev1: {}, imapv2.CapIdle: {}, imapv2.CapListStatus: {}}})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +70,10 @@ func TestSyncTransportMetadataPeekAndIDLE(t *testing.T) {
 	status, err := client.Status("INBOX")
 	if err != nil || status.Total != 1 || status.Unread != 1 || status.UIDValidity == 0 {
 		t.Fatalf("status=%+v err=%v", status, err)
+	}
+	folderStatuses, err := client.FolderStatuses()
+	if err != nil || len(folderStatuses) != 1 || folderStatuses[0].Total != 1 || folderStatuses[0].UIDNext != status.UIDNext {
+		t.Fatalf("LIST-STATUS=%+v err=%v", folderStatuses, err)
 	}
 	uids, err := client.UIDs("INBOX")
 	if err != nil || len(uids) != 1 {
@@ -193,6 +198,24 @@ func TestSyncOptionsWakeOnVanished(t *testing.T) {
 	case <-wake:
 	case <-time.After(time.Second):
 		t.Fatal("VANISHED did not wake folder reconciliation")
+	}
+}
+
+func TestSyncOptionsQueueVanishedForSelectedFolder(t *testing.T) {
+	events := make(chan SyncEvent, 1)
+	selected := &atomic.Value{}
+	selected.Store("Archive")
+	options := syncOptionsWithEvents(nil, events, selected)
+	var uids imapv2.UIDSet
+	uids.AddRange(5, 7)
+	options.UnilateralDataHandler.Vanished(uids, true)
+	select {
+	case event := <-events:
+		if event.Kind != "vanished" || event.Folder != "Archive" || !event.Earlier || !event.HasUID(6) || event.HasUID(8) {
+			t.Fatalf("incorrect VANISHED event: %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("VANISHED event was not queued")
 	}
 }
 

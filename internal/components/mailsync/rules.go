@@ -373,7 +373,7 @@ func (s *Service) ruleForward(ctx context.Context, job RuleJob, action RuleActio
 	if strings.EqualFold(action.Target, job.Account) {
 		return errors.New("a forwarding rule cannot target the linked account")
 	}
-	connection, release, err := s.Acquire(ctx, job.Owner)
+	connection, release, err := s.AcquireBulk(ctx, job.Owner)
 	if err != nil {
 		return err
 	}

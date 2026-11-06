@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/olegpustovit/mcp-icloud-email/imap"
 	"testing"
-	"time"
 )
 
 func TestConcurrentArrivalIsNotAttributedToAgentAndSentAttributionPersists(t *testing.T) {
@@ -29,36 +28,5 @@ func TestConcurrentArrivalIsNotAttributedToAgentAndSentAttributionPersists(t *te
 	changes, err = s.Changes(ctx, "owner", mail.Account, changes[1].Sequence)
 	if err != nil || len(changes) != 1 || changes[0].Message.SentBy != "mcp:agent" {
 		t.Fatal("subsequent read erased sender attribution", changes, err)
-	}
-}
-
-func TestPollingRetainsIdleInboxAndSlowsInactiveFolders(t *testing.T) {
-	s := &Service{owners: map[string]*ownerState{}}
-	now := time.Now()
-	last := now.Add(-15 * time.Second)
-	if s.pollAll("owner", last, now) {
-		t.Fatal("inactive mailbox uses active cadence")
-	}
-	if !s.pollAll("owner", now.Add(-31*time.Second), now) {
-		t.Fatal("inactive mailbox was not polled every 30 seconds")
-	}
-	done := s.Watch("owner")
-	if !s.pollAll("owner", last, now) {
-		t.Fatal("SSE viewer did not activate polling")
-	}
-	done()
-	done()
-	if !s.pollAll("owner", last, now) {
-		t.Fatal("recent disconnect lost active grace period")
-	}
-	s.mu.Lock()
-	s.owners["owner"].active = now.Add(-3 * time.Minute)
-	s.mu.Unlock()
-	if s.pollAll("owner", last, now) {
-		t.Fatal("disconnected viewer retained fast polling")
-	}
-	s.touch("owner")
-	if !s.pollAll("owner", last, now) {
-		t.Fatal("MCP call did not activate polling")
 	}
 }

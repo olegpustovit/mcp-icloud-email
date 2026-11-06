@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,11 +32,12 @@ type Service struct {
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 	mu          sync.Mutex
-	sessions    map[string]*session
+	sessions    map[string]map[commandLane]*session
 	owners      map[string]*ownerState
 	monitors    map[string]*monitor
 	dialSync    func(context.Context, string, string, func()) (syncTransport, error)
 	dialCommand func(context.Context, string, string) (*Connection, error)
+	prefetch    chan prefetchRequest
 	pushSession func(context.Context, string, string) (bool, error)
 	pushSubject string
 	pushHTTP    *http.Client
@@ -46,6 +48,8 @@ type Connection struct {
 	Sender  sender
 	Address string
 }
+
+type prefetchRequest struct{ owner, account string }
 type sender interface {
 	SetAliases([]string)
 	SendEmail(context.Context, string, []string, string, string, smtp.SendOptions) error
@@ -71,8 +75,14 @@ type session struct {
 	gate        chan struct{}
 	connection  *Connection
 	fingerprint [32]byte
-	used        time.Time
 }
+
+type commandLane uint8
+
+const (
+	interactiveLane commandLane = iota
+	bulkLane
+)
 
 func New(ctx context.Context, uri, key string, credentials func(context.Context, string) (string, string, error)) (*Service, error) {
 	return newService(ctx, uri, key, credentials, "mail")
@@ -99,7 +109,7 @@ func newService(ctx context.Context, uri, key string, credentials func(context.C
 		return nil, fmt.Errorf("ping mail sync: %w", err)
 	}
 	workerCtx, cancel := context.WithCancel(ctx)
-	s := &Service{client: client, db: client.Database(database), cipher: aead, credentials: credentials, ctx: workerCtx, cancel: cancel, sessions: map[string]*session{}, owners: map[string]*ownerState{}, monitors: map[string]*monitor{}, dialSync: func(ctx context.Context, address, password string, notify func()) (syncTransport, error) {
+	s := &Service{client: client, db: client.Database(database), cipher: aead, credentials: credentials, ctx: workerCtx, cancel: cancel, sessions: map[string]map[commandLane]*session{}, owners: map[string]*ownerState{}, monitors: map[string]*monitor{}, prefetch: make(chan prefetchRequest, 16), dialSync: func(ctx context.Context, address, password string, notify func()) (syncTransport, error) {
 		return imap.NewSyncClient(ctx, address, password, notify)
 	}}
 	s.dialCommand = func(ctx context.Context, address, password string) (*Connection, error) {
@@ -139,20 +149,55 @@ func newService(ctx context.Context, uri, key string, credentials func(context.C
 		_ = client.Disconnect(context.Background())
 		return nil, err
 	}
-	s.wg.Add(3)
+	s.wg.Add(4)
 	go s.runJobs()
 	go s.runPush()
 	go s.runRules()
+	go s.runPrefetch()
 	return s, nil
 }
 
 // Acquire shares one serialized command connection across browser and MCP requests.
 func (s *Service) Acquire(ctx context.Context, owner string) (*Connection, func(), error) {
+	return s.acquire(ctx, owner, interactiveLane)
+}
+
+func (s *Service) AcquireBulk(ctx context.Context, owner string) (*Connection, func(), error) {
+	return s.acquire(ctx, owner, bulkLane)
+}
+
+func (s *Service) acquireForActor(ctx context.Context, owner, actor string) (*Connection, func(), error) {
+	if strings.HasPrefix(actor, "mcp:") {
+		return s.AcquireBulk(ctx, owner)
+	}
+	return s.Acquire(ctx, owner)
+}
+
+func closeSession(ctx context.Context, entry *session) error {
+	select {
+	case entry.gate <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if entry.connection != nil {
+		_ = entry.connection.Mail.Close()
+		entry.connection = nil
+	}
+	<-entry.gate
+	return nil
+}
+
+func (s *Service) acquire(ctx context.Context, owner string, lane commandLane) (*Connection, func(), error) {
 	s.mu.Lock()
-	entry := s.sessions[owner]
+	lanes := s.sessions[owner]
+	if lanes == nil {
+		lanes = map[commandLane]*session{}
+		s.sessions[owner] = lanes
+	}
+	entry := lanes[lane]
 	if entry == nil {
 		entry = &session{gate: make(chan struct{}, 1)}
-		s.sessions[owner] = entry
+		lanes[lane] = entry
 	}
 	s.mu.Unlock()
 	select {
@@ -169,7 +214,7 @@ func (s *Service) Acquire(ctx context.Context, owner string) (*Connection, func(
 		return nil, nil, err
 	}
 	fingerprint := sha256.Sum256([]byte(address + "\x00" + password))
-	if entry.connection != nil && (entry.fingerprint != fingerprint || time.Since(entry.used) > 4*time.Minute || entry.connection.Mail.Closed()) {
+	if entry.connection != nil && (entry.fingerprint != fingerprint || entry.connection.Mail.Closed()) {
 		_ = entry.connection.Mail.Close()
 		entry.connection = nil
 	}
@@ -182,28 +227,21 @@ func (s *Service) Acquire(ctx context.Context, owner string) (*Connection, func(
 		entry.connection = connection
 		entry.fingerprint = fingerprint
 	}
-	entry.used = time.Now()
 	return entry.connection, release, nil
 }
 
 // Credential checks borrow the command slot instead of opening a third IMAP session.
 func (s *Service) ValidateAccount(ctx context.Context, owner, address, password string) error {
 	s.mu.Lock()
-	entry := s.sessions[owner]
-	if entry == nil {
-		entry = &session{gate: make(chan struct{}, 1)}
-		s.sessions[owner] = entry
+	entries := make([]*session, 0, len(s.sessions[owner]))
+	for _, entry := range s.sessions[owner] {
+		entries = append(entries, entry)
 	}
 	s.mu.Unlock()
-	select {
-	case entry.gate <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	defer func() { <-entry.gate }()
-	if entry.connection != nil {
-		_ = entry.connection.Mail.Close()
-		entry.connection = nil
+	for _, entry := range entries {
+		if err := closeSession(ctx, entry); err != nil {
+			return err
+		}
 	}
 	client, err := imap.NewClient(address, password)
 	if err != nil {
@@ -217,7 +255,10 @@ func (s *Service) Invalidate(ctx context.Context, owner string, disconnect bool)
 	state := s.owner(owner)
 	s.mu.Lock()
 	state.generation++
-	entry := s.sessions[owner]
+	entries := make([]*session, 0, len(s.sessions[owner]))
+	for _, entry := range s.sessions[owner] {
+		entries = append(entries, entry)
+	}
 	m := s.monitors[owner]
 	delete(s.monitors, owner)
 	s.mu.Unlock()
@@ -229,17 +270,10 @@ func (s *Service) Invalidate(ctx context.Context, owner string, disconnect bool)
 			return ctx.Err()
 		}
 	}
-	if entry != nil {
-		select {
-		case entry.gate <- struct{}{}:
-		case <-ctx.Done():
-			return ctx.Err()
+	for _, entry := range entries {
+		if err := closeSession(ctx, entry); err != nil {
+			return err
 		}
-		if entry.connection != nil {
-			_ = entry.connection.Mail.Close()
-			entry.connection = nil
-		}
-		<-entry.gate
 	}
 	if !disconnect {
 		resume, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -274,22 +308,48 @@ func (s *Service) Close(ctx context.Context) error {
 	s.wg.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, entry := range s.sessions {
-		select {
-		case entry.gate <- struct{}{}:
-		case <-ctx.Done():
-			return ctx.Err()
+	for _, lanes := range s.sessions {
+		for _, entry := range lanes {
+			if err := closeSession(ctx, entry); err != nil {
+				return err
+			}
 		}
-		if entry.connection != nil {
-			_ = entry.connection.Mail.Close()
-		}
-		<-entry.gate
 	}
 	err := s.client.Disconnect(ctx)
 	if errors.Is(err, mongo.ErrClientDisconnected) {
 		return nil
 	}
 	return err
+}
+
+func (s *Service) keepSessions() {
+	s.mu.Lock()
+	var entries []*session
+	for _, lanes := range s.sessions {
+		for _, entry := range lanes {
+			entries = append(entries, entry)
+		}
+	}
+	s.mu.Unlock()
+	for _, entry := range entries {
+		ctx, cancel := context.WithTimeout(s.ctx, 20*time.Second)
+		select {
+		case entry.gate <- struct{}{}:
+		case <-ctx.Done():
+			cancel()
+			continue
+		}
+		if connection := entry.connection; connection != nil && !connection.Mail.Closed() {
+			if keepAlive, ok := connection.Mail.(interface{ KeepAlive(context.Context) error }); ok {
+				if err := keepAlive.KeepAlive(ctx); err != nil {
+					_ = connection.Mail.Close()
+					entry.connection = nil
+				}
+			}
+		}
+		<-entry.gate
+		cancel()
+	}
 }
 
 func (s *Service) seal(data []byte) []byte {
@@ -322,6 +382,7 @@ func (s *Service) runJobs() {
 				if err := s.cleanOutbox(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("clean recovered outbox payloads", "error", err)
 				}
+				s.keepSessions()
 			}
 			if err := s.runRename(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("mail folder recovery", "error", err)

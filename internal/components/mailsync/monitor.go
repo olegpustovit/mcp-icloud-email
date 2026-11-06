@@ -49,6 +49,7 @@ type monitor struct {
 	requests                 chan refreshRequest
 	folders                  map[string]Folder
 	order                    []string
+	messages                 map[string]map[uint32]Metadata
 	backfill                 int
 	quota                    *imap.StorageQuota
 	lastProgress             atomic.Int64
@@ -86,7 +87,7 @@ func (s *Service) Start(ctx context.Context, owner string) (*monitor, error) {
 		}
 		old := s.monitors[owner]
 		workerCtx, cancel := context.WithCancel(s.ctx)
-		m := &monitor{owner: owner, account: account, password: password, fingerprint: fingerprint, ctx: workerCtx, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}), wake: make(chan struct{}, 1), requests: make(chan refreshRequest, 16), folders: map[string]Folder{}}
+		m := &monitor{owner: owner, account: account, password: password, fingerprint: fingerprint, ctx: workerCtx, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}), wake: make(chan struct{}, 1), requests: make(chan refreshRequest, 16), folders: map[string]Folder{}, messages: map[string]map[uint32]Metadata{}}
 		s.monitors[owner] = m
 		s.wg.Add(1)
 		s.mu.Unlock()
@@ -236,6 +237,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 				return err
 			}
 			delete(m.folders, old.Name)
+			delete(m.messages, old.Name)
 		}
 	}
 	mode := "POLL"
@@ -276,9 +278,12 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 	} else {
 		slog.Warn("read mail storage quota", "error", quotaErr)
 	}
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	lastFolders := time.Now()
+	var events <-chan imap.SyncEvent
+	if transport, ok := wire.(interface{ Events() <-chan imap.SyncEvent }); ok {
+		events = transport.Events()
+	}
 	for m.ctx.Err() == nil {
 		complete := true
 		for _, folder := range m.folders {
@@ -295,7 +300,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			return err
 		}
 		var stopIdle func() error
-		if wire.CanIdle() {
+		if wire.CanIdle() && complete {
 			stopIdle, err = wire.StartIdle()
 			if err != nil {
 				return err
@@ -306,6 +311,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			backfill = time.After(40 * time.Millisecond)
 		}
 		var request refreshRequest
+		var event imap.SyncEvent
 		work := ""
 		select {
 		case <-m.ctx.Done():
@@ -314,6 +320,8 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			work = "closed"
 		case <-m.wake:
 			work = "inbox"
+		case event = <-events:
+			work = "event"
 		case request = <-m.requests:
 			work = "request"
 		case <-ticker.C:
@@ -339,13 +347,28 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			if err = s.reconcileFolder(m, wire, "INBOX", false, "imap", ""); err != nil {
 				return err
 			}
-		case "poll":
-			if s.pollAll(m.owner, lastFolders, time.Now()) {
-				err = s.refreshFolders(m, wire, refreshRequest{actor: "imap"})
-				lastFolders = time.Now()
-			} else {
+		case "event":
+			if event.Kind == "vanished" {
+				err = s.reconcileVanished(m, wire, event)
+			} else if event.Kind == "fetch" && event.Folder != "" {
+				uids, ok := event.Numbers()
+				if ok && len(uids) > 0 {
+					err = s.reconcileUIDs(m, wire, event.Folder, uids)
+				} else {
+					err = s.reconcileFolder(m, wire, event.Folder, false, "imap", "")
+				}
+			} else if event.Kind == "mailbox" && event.Folder != "" {
+				err = s.reconcileMailboxEvent(m, wire, event.Folder)
+			} else if event.Folder == "" {
 				err = s.reconcileFolder(m, wire, "INBOX", false, "imap", "")
+			} else {
+				err = s.reconcileFolder(m, wire, event.Folder, false, "imap", "")
 			}
+			if err != nil {
+				return err
+			}
+		case "poll":
+			err = s.pollFolders(m, wire)
 			if err != nil {
 				return err
 			}
@@ -436,6 +459,7 @@ func (s *Service) refreshFolders(m *monitor, wire syncTransport, request refresh
 				return err
 			}
 			delete(m.folders, name)
+			delete(m.messages, name)
 		}
 		m.order = slices.Clone(names)
 	}
@@ -446,6 +470,244 @@ func (s *Service) refreshFolders(m *monitor, wire syncTransport, request refresh
 	}
 	return nil
 }
+
+type folderStatusTransport interface {
+	FolderStatuses() ([]imap.FolderInfo, error)
+}
+
+func (s *Service) pollFolders(m *monitor, wire syncTransport) error {
+	var current []imap.FolderInfo
+	var err error
+	if transport, ok := wire.(folderStatusTransport); ok {
+		current, err = transport.FolderStatuses()
+	} else {
+		current, err = wire.Folders()
+		if err == nil {
+			for i := range current {
+				status, statusErr := wire.Status(current[i].Name)
+				if statusErr != nil {
+					return statusErr
+				}
+				status.Role, status.Attributes, status.Delimiter = current[i].Role, current[i].Attributes, current[i].Delimiter
+				current[i] = status
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if len(current) != len(m.order) {
+		return s.refreshFolders(m, wire, refreshRequest{actor: "imap"})
+	}
+	for i, info := range current {
+		if m.order[i] != info.Name {
+			return s.refreshFolders(m, wire, refreshRequest{actor: "imap"})
+		}
+	}
+	for _, info := range current {
+		previous := m.folders[info.Name]
+		if previous.UIDValidity == info.UIDValidity && previous.UIDNext == info.UIDNext && previous.HighestModSeq == info.HighestModSeq && previous.Total == info.Total && previous.Unread == info.Unread && previous.Role == info.Role && slices.Equal(previous.Attributes, info.Attributes) {
+			continue
+		}
+		if err := s.reconcileFolder(m, wire, info.Name, false, "imap", ""); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) reconcileMailboxEvent(m *monitor, wire syncTransport, name string) error {
+	previous := m.folders[name]
+	info, err := wire.Status(name)
+	if err != nil {
+		return err
+	}
+	if previous.UIDValidity != info.UIDValidity || info.UIDNext < previous.UIDNext {
+		return s.reconcileFolder(m, wire, name, false, "imap", "")
+	}
+	count := uint64(info.UIDNext - previous.UIDNext)
+	if count == 0 || count > 1000 {
+		return s.reconcileFolder(m, wire, name, false, "imap", "")
+	}
+	uids := make([]uint32, count)
+	for i := range uids {
+		uids[i] = previous.UIDNext + uint32(i)
+	}
+	return s.reconcileUIDs(m, wire, name, uids)
+}
+
+func (s *Service) reconcileUIDs(m *monitor, wire syncTransport, name string, uids []uint32) error {
+	started := time.Now()
+	previous, cached := m.folders[name], m.messages[name]
+	if previous.UIDValidity == 0 || cached == nil {
+		return s.reconcileFolder(m, wire, name, false, "imap", "")
+	}
+	known := make(map[uint32]Metadata, len(cached))
+	for uid, mail := range cached {
+		known[uid] = mail
+	}
+	existing, added := []uint32{}, []uint32{}
+	for _, uid := range uids {
+		if _, ok := known[uid]; ok {
+			existing = append(existing, uid)
+		} else {
+			added = append(added, uid)
+		}
+	}
+	changes := []Change{}
+	arrivals := 0
+	if len(existing) > 0 {
+		updates, broken, err := fetchMailboxResilient(wire, name, existing, 0, true)
+		if err != nil {
+			return err
+		}
+		for _, update := range updates {
+			var uid uint32
+			_, _ = fmt.Sscan(update.ID, &uid)
+			old, ok := known[uid]
+			if !ok {
+				continue
+			}
+			next := old
+			next.Flags, next.Unread, next.FlagColor, next.ModSeq = update.Flags, update.Unread, update.FlagColor, update.ModSeq
+			next.Broken = next.Broken || broken[uid]
+			next.Fingerprint = metadataFingerprint(next.Email)
+			if next.Fingerprint != old.Fingerprint || next.Broken != old.Broken {
+				changes = append(changes, Change{Entity: "msg", Op: "put", Key: next.Key, Message: &next, Before: &old})
+				known[uid] = next
+			}
+		}
+	}
+	if len(added) > 0 {
+		fetched, broken, err := fetchMailboxResilient(wire, name, added, 0, false)
+		if err != nil {
+			return err
+		}
+		prepared, merged, err := s.prepareBatch(m.ctx, m.owner, m.account, fetched)
+		if err != nil {
+			return err
+		}
+		changes = append(changes, merged...)
+		for i := range prepared {
+			var uid uint32
+			_, _ = fmt.Sscan(prepared[i].ID, &uid)
+			prepared[i].Broken = broken[uid]
+		}
+		var rules []Rule
+		rulesLoaded := false
+		for _, metadata := range prepared {
+			var uid uint32
+			_, _ = fmt.Sscan(metadata.ID, &uid)
+			arrival := previous.Ready && uid >= previous.UIDNext && strings.EqualFold(name, "INBOX")
+			if arrival {
+				arrivals++
+			}
+			if arrival && !rulesLoaded {
+				prefs, err := s.Preferences(m.ctx, m.owner)
+				if err != nil {
+					return err
+				}
+				rules = prefs.Rules
+				rulesLoaded = true
+			}
+			copy := metadata
+			changes = append(changes, Change{Entity: "msg", Op: "put", Key: metadata.Key, Message: &copy, Arrival: arrival})
+			if arrival {
+				if job := newRuleJob(m.owner, m.account, rules, metadata); job != nil {
+					changes = append(changes, Change{Entity: "rule-job", Op: "put", Key: job.ID, RuleJob: job})
+				}
+			}
+			known[uid] = metadata
+		}
+	}
+	info, err := wire.Status(name)
+	if err != nil {
+		return err
+	}
+	if info.UIDValidity != previous.UIDValidity {
+		return errors.New("mailbox generation changed during unilateral FETCH")
+	}
+	folder := previous
+	folder.FolderInfo = info
+	folder.Role, folder.Attributes, folder.Delimiter = previous.Role, previous.Attributes, previous.Delimiter
+	folder.Imported = int64(len(known))
+	folder.Complete = folder.Imported >= int64(info.Total)
+	if !reflect.DeepEqual(folder, previous) {
+		copy := folder
+		changes = append(changes, Change{Entity: "folder", Op: "put", Key: folder.Key, Folder: &copy})
+	}
+	updates := make([]Metadata, 0, len(changes))
+	indices := make([]int, 0, len(changes))
+	for i, change := range changes {
+		if change.Entity == "msg" && change.Op == "put" && change.Message != nil {
+			updates = append(updates, *change.Message)
+			indices = append(indices, i)
+		}
+	}
+	if len(updates) > 0 {
+		if err = s.decorateMoves(m.ctx, m.owner, m.account, updates); err != nil {
+			return err
+		}
+		for i, index := range indices {
+			changes[index].Message = &updates[i]
+		}
+	}
+	if err = s.commit(m.ctx, m.owner, m.account, "imap", "", changes); err != nil {
+		return err
+	}
+	m.messages[name], m.folders[name] = known, folder
+	if arrivals > 0 && strings.EqualFold(name, "INBOX") {
+		s.queuePrefetch(m.owner, m.account)
+	}
+	slog.Info("mail sync reconcile", "folder", name, "duration_ms", time.Since(started).Milliseconds(), "fetched", len(added), "flags", len(existing), "deleted", 0)
+	return nil
+}
+
+func (s *Service) reconcileVanished(m *monitor, wire syncTransport, event imap.SyncEvent) error {
+	if event.Folder == "" {
+		return s.reconcileFolder(m, wire, "INBOX", false, "imap", "")
+	}
+	if m.messages[event.Folder] == nil {
+		return s.reconcileFolder(m, wire, event.Folder, false, "imap", "")
+	}
+	started := time.Now()
+	previous := m.folders[event.Folder]
+	known := make(map[uint32]Metadata, len(m.messages[event.Folder]))
+	changes := make([]Change, 0)
+	for uid, mail := range m.messages[event.Folder] {
+		if event.HasUID(uid) {
+			before := mail
+			changes = append(changes, Change{Entity: "msg", Op: "del", Key: mail.Key, Before: &before})
+			continue
+		}
+		known[uid] = mail
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	deleted := len(changes)
+	info, err := wire.Status(event.Folder)
+	if err != nil {
+		return err
+	}
+	folder := previous
+	folder.FolderInfo = info
+	folder.Role, folder.Attributes, folder.Delimiter = previous.Role, previous.Attributes, previous.Delimiter
+	folder.Imported = int64(len(known))
+	folder.Complete = folder.Imported >= int64(info.Total)
+	if !reflect.DeepEqual(folder, previous) {
+		copy := folder
+		changes = append(changes, Change{Entity: "folder", Op: "put", Key: folder.Key, Folder: &copy})
+	}
+	if err = s.commit(m.ctx, m.owner, m.account, "imap", "", changes); err != nil {
+		return err
+	}
+	m.messages[event.Folder] = known
+	m.folders[event.Folder] = folder
+	slog.Info("mail sync reconcile", "folder", event.Folder, "duration_ms", time.Since(started).Milliseconds(), "fetched", 0, "flags", 0, "deleted", deleted)
+	return nil
+}
+
 func (s *Service) syncStatus(m *monitor, phase, mode, problem string) error {
 	now := time.Now().UTC()
 	status := SyncStatus{Owner: m.owner, Account: m.account, Phase: phase, Mode: mode, Error: problem, Quota: m.quota, At: now}
@@ -469,6 +731,9 @@ func (s *Service) syncStatus(m *monitor, phase, mode, problem string) error {
 }
 func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, backfill bool, actor, txID string) error {
 	started := time.Now()
+	if m.messages == nil {
+		m.messages = map[string]map[uint32]Metadata{}
+	}
 	if m.ctx.Err() != nil {
 		return m.ctx.Err()
 	}
@@ -477,6 +742,15 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 		return fmt.Errorf("status %s: %w", name, err)
 	}
 	previous := m.folders[name]
+	if previous.Ready && previous.UIDValidity == info.UIDValidity {
+		if transport, ok := wire.(interface {
+			SelectQResync(string, uint32, uint64) error
+		}); ok {
+			if err := transport.SelectQResync(name, info.UIDValidity, previous.HighestModSeq); err != nil {
+				return err
+			}
+		}
+	}
 	folder := previous
 	folder.Key = identity(m.owner, m.account, name)
 	folder.Owner = m.owner
@@ -504,15 +778,22 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 		fresh := folder
 		changes = append(changes, Change{Entity: "folder", Op: "reset", Key: folder.Key, Folder: &fresh})
 	}
-	existing, err := s.metadata(m.ctx, m.owner, m.account, bson.M{"email.folder": name, "email.uidvalidity": info.UIDValidity}, 0)
-	if err != nil {
-		return err
-	}
-	known := make(map[uint32]Metadata, len(existing))
-	for _, mail := range existing {
-		var uid uint32
-		_, _ = fmt.Sscan(mail.ID, &uid)
-		known[uid] = mail
+	known := make(map[uint32]Metadata)
+	if cached := m.messages[name]; cached != nil && !reset {
+		for uid, mail := range cached {
+			known[uid] = mail
+		}
+	} else {
+		existing, err := s.metadata(m.ctx, m.owner, m.account, bson.M{"email.folder": name, "email.uidvalidity": info.UIDValidity}, 0)
+		if err != nil {
+			return err
+		}
+		known = make(map[uint32]Metadata, len(existing))
+		for _, mail := range existing {
+			var uid uint32
+			_, _ = fmt.Sscan(mail.ID, &uid)
+			known[uid] = mail
+		}
 	}
 	var allUIDs []uint32
 	needUIDs := !folder.Ready || backfill || reset || previous.Total != info.Total || previous.UIDNext != info.UIDNext
@@ -546,17 +827,24 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 			}
 		}
 	}
-	fetched, flagsUpdated := 0, 0
+	fetched, flagsUpdated, arrivals := 0, 0, 0
+	fetchRan := false
 	if len(fetch) > 0 {
-		mail, err := wire.Fetch(name, fetch, 0, false)
+		mail, broken, err := fetchMailboxResilient(wire, name, fetch, 0, false)
 		if err != nil {
 			return err
 		}
+		fetchRan = true
 		fetched = len(mail)
 
 		prepared, merged, err := s.prepareBatch(m.ctx, m.owner, m.account, mail)
 		if err != nil {
 			return err
+		}
+		for i := range prepared {
+			var uid uint32
+			_, _ = fmt.Sscan(prepared[i].ID, &uid)
+			prepared[i].Broken = broken[uid]
 		}
 		deleted := make(map[string]bool)
 		for _, change := range changes {
@@ -585,6 +873,7 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 			arrival := previous.Ready && !reset && uid >= previous.UIDNext && (folder.Role == "inbox" || strings.EqualFold(name, "INBOX"))
 			changes = append(changes, Change{Entity: "msg", Op: "put", Key: metadata.Key, Message: &copy, Arrival: arrival})
 			if arrival {
+				arrivals++
 				if job := newRuleJob(m.owner, m.account, rules, metadata); job != nil {
 					changes = append(changes, Change{Entity: "rule-job", Op: "put", Key: job.ID, RuleJob: job})
 				}
@@ -609,10 +898,11 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 			folder.FullFlagSync = time.Now().UTC()
 		}
 		if since == 0 || since != info.HighestModSeq || !wire.CondStore() {
-			flags, err := wire.Fetch(name, uids, since, true)
+			flags, broken, err := fetchMailboxResilient(wire, name, uids, since, true)
 			if err != nil {
 				return err
 			}
+			fetchRan = true
 			for _, update := range flags {
 				var uid uint32
 				_, _ = fmt.Sscan(update.ID, &uid)
@@ -621,12 +911,13 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 					continue
 				}
 				next := old
+				next.Broken = next.Broken || broken[uid]
 				next.Flags = update.Flags
 				next.Unread = update.Unread
 				next.FlagColor = update.FlagColor
 				next.ModSeq = update.ModSeq
 				next.Fingerprint = metadataFingerprint(next.Email)
-				if old.Fingerprint != next.Fingerprint {
+				if old.Fingerprint != next.Fingerprint || old.Broken != next.Broken {
 					changes = append(changes, Change{Entity: "msg", Op: "put", Key: next.Key, Message: &next, Before: &old})
 					known[uid] = next
 					flagsUpdated++
@@ -648,12 +939,14 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 		changes = append(changes, Change{Entity: "folder", Op: "put", Key: folder.Key, Folder: &copy})
 	}
 	// A mailbox can be recreated while SEARCH/FETCH is in flight; never mix generations.
-	latest, err := wire.Status(name)
-	if err != nil {
-		return err
-	}
-	if latest.UIDValidity != info.UIDValidity {
-		return errors.New("mailbox generation changed during reconciliation")
+	if fetchRan {
+		latest, err := wire.Status(name)
+		if err != nil {
+			return err
+		}
+		if latest.UIDValidity != info.UIDValidity {
+			return errors.New("mailbox generation changed during reconciliation")
+		}
 	}
 	updates := make([]Metadata, 0, len(changes))
 	indices := make([]int, 0, len(changes))
@@ -675,6 +968,10 @@ func (s *Service) reconcileFolder(m *monitor, wire syncTransport, name string, b
 		return err
 	}
 	m.folders[name] = folder
+	m.messages[name] = known
+	if arrivals > 0 && strings.EqualFold(name, "INBOX") {
+		s.queuePrefetch(m.owner, m.account)
+	}
 	deleted := 0
 	for _, change := range changes {
 		if change.Entity == "msg" && change.Op == "del" {

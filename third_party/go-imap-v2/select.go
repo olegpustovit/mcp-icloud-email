@@ -4,6 +4,12 @@ package imap
 type SelectOptions struct {
 	ReadOnly  bool
 	CondStore bool // requires CONDSTORE
+	QResync   *SelectOptionsQResync
+}
+
+type SelectOptionsQResync struct {
+	UIDValidity uint32
+	ModSeq      uint64
 }
 
 // SelectData is the data returned by a SELECT command.

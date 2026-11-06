@@ -3,6 +3,7 @@ package imap
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -178,6 +179,22 @@ func (c *Client) Closed() bool {
 	default:
 		return false
 	}
+}
+
+func (c *Client) KeepAlive(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client == nil || c.Closed() {
+		return errors.New("IMAP connection is closed")
+	}
+	finished := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() { _ = c.client.Terminate(); close(finished) })
+	defer func() {
+		if !stop() {
+			<-finished
+		}
+	}()
+	return c.client.Noop()
 }
 
 // ListFolders lists all available mailboxes/folders
