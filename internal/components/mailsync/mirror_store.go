@@ -405,7 +405,7 @@ func (s *Service) SyncHealth(ctx context.Context) (SyncHealth, error) {
 	now := time.Now().UTC()
 	for _, status := range statuses {
 		age := int64(now.Sub(status.At).Seconds())
-		if age > health.LastProgressAgeSec {
+		if age >= health.LastProgressAgeSec {
 			health.LastProgressAgeSec = age
 			health.Phase = status.Phase
 		}
