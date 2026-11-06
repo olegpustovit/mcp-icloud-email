@@ -247,11 +247,37 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 	if wire.CondStore() {
 		mode += " + CONDSTORE"
 	}
+	type applyResult struct {
+		request refreshRequest
+		err     error
+	}
+	applyResults := make(chan applyResult, 1)
+	var pendingRequest *refreshRequest
+	// Mutations run off the monitor goroutine so a slow command lane never stalls arrival sync.
+	takeRequest := func(request refreshRequest) error {
+		if request.apply == nil {
+			return s.processRequest(m, wire, request)
+		}
+		copy := request
+		pendingRequest = &copy
+		go func() {
+			applyCtx, cancel := context.WithCancel(copy.ctx)
+			stop := context.AfterFunc(m.ctx, cancel)
+			result := applyResult{request: copy, err: s.applyRequest(copy, applyCtx)}
+			stop()
+			cancel()
+			select {
+			case applyResults <- result:
+			case <-m.ctx.Done():
+			}
+		}()
+		return nil
+	}
 	if err = s.syncStatus(m, "importing", mode, ""); err != nil {
 		return err
 	}
 	for i, name := range m.order {
-		if err = s.reconcileFolder(m, wire, name, false, "imap", ""); err != nil {
+		if err = s.reconcileFolder(m, wire, name, false, requestActor(pendingRequest, name), ""); err != nil {
 			return err
 		}
 		if i == 0 {
@@ -265,9 +291,18 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			return err
 		}
 		// Deliver urgent browser/MCP refreshes between initial mailbox imports.
+		requests := (<-chan refreshRequest)(m.requests)
+		if pendingRequest != nil {
+			requests = nil
+		}
 		select {
-		case request := <-m.requests:
-			if err = s.processRequest(m, wire, request); err != nil {
+		case request := <-requests:
+			if err = takeRequest(request); err != nil {
+				return err
+			}
+		case result := <-applyResults:
+			pendingRequest = nil
+			if err = s.finishRequest(m, wire, result.request, result.err); err != nil {
 				return err
 			}
 		default:
@@ -312,6 +347,10 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 		}
 		var request refreshRequest
 		var event imap.SyncEvent
+		requestChannel := (<-chan refreshRequest)(m.requests)
+		if pendingRequest != nil {
+			requestChannel = nil
+		}
 		work := ""
 		select {
 		case <-m.ctx.Done():
@@ -322,8 +361,11 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			work = "inbox"
 		case event = <-events:
 			work = "event"
-		case request = <-m.requests:
+		case request = <-requestChannel:
 			work = "request"
+		case result := <-applyResults:
+			request, err = result.request, result.err
+			work = "request-result"
 		case <-ticker.C:
 			work = "poll"
 		case <-backfill:
@@ -340,36 +382,41 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 		case "closed":
 			return errors.New("IMAP IDLE connection closed")
 		case "request":
-			if err = s.processRequest(m, wire, request); err != nil {
+			if err = takeRequest(request); err != nil {
+				return err
+			}
+		case "request-result":
+			pendingRequest = nil
+			if err = s.finishRequest(m, wire, request, err); err != nil {
 				return err
 			}
 		case "inbox":
-			if err = s.reconcileFolder(m, wire, "INBOX", false, "imap", ""); err != nil {
+			if err = s.reconcileFolder(m, wire, "INBOX", false, requestActor(pendingRequest, "INBOX"), ""); err != nil {
 				return err
 			}
 		case "event":
 			if event.Kind == "vanished" {
 				slog.Info("mail sync VANISHED", "folder", event.Folder, "uids", event.UIDs.String(), "earlier", event.Earlier)
-				err = s.reconcileVanished(m, wire, event)
+				err = s.reconcileVanished(m, wire, event, requestActor(pendingRequest, event.Folder))
 			} else if event.Kind == "fetch" && event.Folder != "" {
 				uids, ok := event.Numbers()
 				if ok && len(uids) > 0 {
-					err = s.reconcileUIDs(m, wire, event.Folder, uids)
+					err = s.reconcileUIDs(m, wire, event.Folder, uids, requestActor(pendingRequest, event.Folder))
 				} else {
-					err = s.reconcileFolder(m, wire, event.Folder, false, "imap", "")
+					err = s.reconcileFolder(m, wire, event.Folder, false, requestActor(pendingRequest, event.Folder), "")
 				}
 			} else if event.Kind == "mailbox" && event.Folder != "" {
-				err = s.reconcileMailboxEvent(m, wire, event.Folder)
+				err = s.reconcileMailboxEvent(m, wire, event.Folder, requestActor(pendingRequest, event.Folder))
 			} else if event.Folder == "" {
-				err = s.reconcileFolder(m, wire, "INBOX", false, "imap", "")
+				err = s.reconcileFolder(m, wire, "INBOX", false, requestActor(pendingRequest, "INBOX"), "")
 			} else {
-				err = s.reconcileFolder(m, wire, event.Folder, false, "imap", "")
+				err = s.reconcileFolder(m, wire, event.Folder, false, requestActor(pendingRequest, event.Folder), "")
 			}
 			if err != nil {
 				return err
 			}
 		case "poll":
-			err = s.pollFolders(m, wire)
+			err = s.pollFolders(m, wire, pendingRequest)
 			if err != nil {
 				return err
 			}
@@ -378,7 +425,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 				index := (m.backfill + n) % len(m.order)
 				name := m.order[index]
 				if !m.folders[name].Complete {
-					err = s.reconcileFolder(m, wire, name, true, "imap", "")
+					err = s.reconcileFolder(m, wire, name, true, requestActor(pendingRequest, name), "")
 					m.backfill = (index + 1) % len(m.order)
 					if err != nil {
 						return err
@@ -416,14 +463,20 @@ func watchProgress(ctx context.Context, lastProgress *atomic.Int64, interval, st
 
 // Hold reconciliation while a shared command runs so IDLE cannot steal its actor/tx identity.
 func (s *Service) processRequest(m *monitor, wire syncTransport, request refreshRequest) error {
-	if request.ctx != nil && request.ctx.Err() != nil {
-		request.done <- request.ctx.Err()
-		return nil
+	return s.finishRequest(m, wire, request, s.applyRequest(request, request.ctx))
+}
+
+func (s *Service) applyRequest(request refreshRequest, ctx context.Context) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
-	var applied error
 	if request.apply != nil {
-		applied = request.apply(request.ctx)
+		return request.apply(ctx)
 	}
+	return nil
+}
+
+func (s *Service) finishRequest(m *monitor, wire syncTransport, request refreshRequest, applied error) error {
 	var sent *smtp.SentCopyError
 	var saved *imap.DraftSavedError
 	if applied != nil && !errors.As(applied, &sent) && !errors.As(applied, &saved) {
@@ -436,6 +489,13 @@ func (s *Service) processRequest(m *monitor, wire syncTransport, request refresh
 	}
 	request.done <- errors.Join(applied, s.acknowledge(m.ctx, m.owner, m.account, request.actor, request.txID))
 	return nil
+}
+
+func requestActor(request *refreshRequest, folder string) string {
+	if request != nil && (len(request.folders) == 0 || slices.Contains(request.folders, folder)) {
+		return request.actor
+	}
+	return "imap"
 }
 func (s *Service) refreshFolders(m *monitor, wire syncTransport, request refreshRequest) error {
 	names := request.folders
@@ -476,7 +536,7 @@ type folderStatusTransport interface {
 	FolderStatuses() ([]imap.FolderInfo, error)
 }
 
-func (s *Service) pollFolders(m *monitor, wire syncTransport) error {
+func (s *Service) pollFolders(m *monitor, wire syncTransport, pending *refreshRequest) error {
 	var current []imap.FolderInfo
 	var err error
 	if transport, ok := wire.(folderStatusTransport); ok {
@@ -498,11 +558,11 @@ func (s *Service) pollFolders(m *monitor, wire syncTransport) error {
 		return err
 	}
 	if len(current) != len(m.order) {
-		return s.refreshFolders(m, wire, refreshRequest{actor: "imap"})
+		return s.refreshFolders(m, wire, refreshRequest{actor: requestActor(pending, "")})
 	}
 	for i, info := range current {
 		if m.order[i] != info.Name {
-			return s.refreshFolders(m, wire, refreshRequest{actor: "imap"})
+			return s.refreshFolders(m, wire, refreshRequest{actor: requestActor(pending, "")})
 		}
 	}
 	for _, info := range current {
@@ -510,38 +570,38 @@ func (s *Service) pollFolders(m *monitor, wire syncTransport) error {
 		if previous.UIDValidity == info.UIDValidity && previous.UIDNext == info.UIDNext && previous.HighestModSeq == info.HighestModSeq && previous.Total == info.Total && previous.Unread == info.Unread && previous.Role == info.Role && slices.Equal(previous.Attributes, info.Attributes) {
 			continue
 		}
-		if err := s.reconcileFolder(m, wire, info.Name, false, "imap", ""); err != nil {
+		if err := s.reconcileFolder(m, wire, info.Name, false, requestActor(pending, info.Name), ""); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) reconcileMailboxEvent(m *monitor, wire syncTransport, name string) error {
+func (s *Service) reconcileMailboxEvent(m *monitor, wire syncTransport, name, actor string) error {
 	previous := m.folders[name]
 	info, err := wire.Status(name)
 	if err != nil {
 		return err
 	}
 	if previous.UIDValidity != info.UIDValidity || info.UIDNext < previous.UIDNext {
-		return s.reconcileFolder(m, wire, name, false, "imap", "")
+		return s.reconcileFolder(m, wire, name, false, actor, "")
 	}
 	count := uint64(info.UIDNext - previous.UIDNext)
 	if count == 0 || count > 1000 {
-		return s.reconcileFolder(m, wire, name, false, "imap", "")
+		return s.reconcileFolder(m, wire, name, false, actor, "")
 	}
 	uids := make([]uint32, count)
 	for i := range uids {
 		uids[i] = previous.UIDNext + uint32(i)
 	}
-	return s.reconcileUIDs(m, wire, name, uids)
+	return s.reconcileUIDs(m, wire, name, uids, actor)
 }
 
-func (s *Service) reconcileUIDs(m *monitor, wire syncTransport, name string, uids []uint32) error {
+func (s *Service) reconcileUIDs(m *monitor, wire syncTransport, name string, uids []uint32, actor string) error {
 	started := time.Now()
 	previous, cached := m.folders[name], m.messages[name]
 	if previous.UIDValidity == 0 || cached == nil {
-		return s.reconcileFolder(m, wire, name, false, "imap", "")
+		return s.reconcileFolder(m, wire, name, false, actor, "")
 	}
 	known := make(map[uint32]Metadata, len(cached))
 	for uid, mail := range cached {
@@ -653,7 +713,7 @@ func (s *Service) reconcileUIDs(m *monitor, wire syncTransport, name string, uid
 			changes[index].Message = &updates[i]
 		}
 	}
-	if err = s.commit(m.ctx, m.owner, m.account, "imap", "", changes); err != nil {
+	if err = s.commit(m.ctx, m.owner, m.account, actor, "", changes); err != nil {
 		return err
 	}
 	m.messages[name], m.folders[name] = known, folder
@@ -664,12 +724,12 @@ func (s *Service) reconcileUIDs(m *monitor, wire syncTransport, name string, uid
 	return nil
 }
 
-func (s *Service) reconcileVanished(m *monitor, wire syncTransport, event imap.SyncEvent) error {
+func (s *Service) reconcileVanished(m *monitor, wire syncTransport, event imap.SyncEvent, actor string) error {
 	if event.Folder == "" {
-		return s.reconcileFolder(m, wire, "INBOX", false, "imap", "")
+		return s.reconcileFolder(m, wire, "INBOX", false, actor, "")
 	}
 	if m.messages[event.Folder] == nil {
-		return s.reconcileFolder(m, wire, event.Folder, false, "imap", "")
+		return s.reconcileFolder(m, wire, event.Folder, false, actor, "")
 	}
 	started := time.Now()
 	previous := m.folders[event.Folder]
@@ -700,7 +760,7 @@ func (s *Service) reconcileVanished(m *monitor, wire syncTransport, event imap.S
 		copy := folder
 		changes = append(changes, Change{Entity: "folder", Op: "put", Key: folder.Key, Folder: &copy})
 	}
-	if err = s.commit(m.ctx, m.owner, m.account, "imap", "", changes); err != nil {
+	if err = s.commit(m.ctx, m.owner, m.account, actor, "", changes); err != nil {
 		return err
 	}
 	m.messages[event.Folder] = known

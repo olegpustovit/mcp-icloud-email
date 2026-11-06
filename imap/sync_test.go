@@ -105,11 +105,13 @@ func TestSyncTransportMetadataPeekAndIDLE(t *testing.T) {
 	for len(wake) > 0 {
 		<-wake
 	}
+	// imapmemserver acks IDLE before it subscribes to mailbox updates; let it subscribe first.
+	time.Sleep(200 * time.Millisecond)
 	appendMessage(other, "second@example.com")
 	select {
 	case <-wake:
-	case <-time.After(2 * time.Second):
-		t.Fatal("IDLE did not report new mail within two seconds")
+	case <-time.After(10 * time.Second):
+		t.Fatal("IDLE did not report new mail within ten seconds")
 	}
 	if err = stop(); err != nil {
 		t.Fatal(err)

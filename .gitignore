@@ -39,3 +39,4 @@ docs/design/*
 mail-server
 .env.*
 !.env.example
+.envrc

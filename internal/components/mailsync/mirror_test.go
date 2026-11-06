@@ -315,7 +315,7 @@ func TestReconcileVanishedDeletesUIDRange(t *testing.T) {
 	fake.mu.Unlock()
 	var vanished imapv2.UIDSet
 	vanished.AddRange(5, 7)
-	if err := s.reconcileVanished(m, fake, imap.SyncEvent{Kind: "vanished", Folder: "INBOX", UIDs: vanished, Earlier: true}); err != nil {
+	if err := s.reconcileVanished(m, fake, imap.SyncEvent{Kind: "vanished", Folder: "INBOX", UIDs: vanished, Earlier: true}, "imap"); err != nil {
 		t.Fatal(err)
 	}
 	count, err := s.db.Collection("mail_messages").CountDocuments(ctx, bson.M{"owner": owner, "account": account})
