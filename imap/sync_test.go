@@ -190,6 +190,73 @@ func TestVanishedUnilateralResponseWakesSync(t *testing.T) {
 	}
 }
 
+func TestVanishedDuringStatusAndSelect(t *testing.T) {
+	for _, command := range []string{"STATUS", "SELECT"} {
+		t.Run(command, func(t *testing.T) {
+			clientConn, serverConn := net.Pipe()
+			defer serverConn.Close()
+			vanished := make(chan struct {
+				set     imapv2.UIDSet
+				earlier bool
+			}, 1)
+			wire := imapclient.New(clientConn, &imapclient.Options{UnilateralDataHandler: &imapclient.UnilateralDataHandler{
+				Vanished: func(set imapv2.UIDSet, earlier bool) {
+					vanished <- struct {
+						set     imapv2.UIDSet
+						earlier bool
+					}{set, earlier}
+				},
+			}})
+			t.Cleanup(func() { _ = wire.Close() })
+			serverErr := make(chan error, 1)
+			go func() {
+				reader := bufio.NewReader(serverConn)
+				if _, err := io.WriteString(serverConn, "* OK ready\r\n"); err != nil {
+					serverErr <- err
+					return
+				}
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					serverErr <- err
+					return
+				}
+				fields := strings.Fields(line)
+				if len(fields) < 3 {
+					serverErr <- io.ErrUnexpectedEOF
+					return
+				}
+				tag := fields[0]
+				if command == "STATUS" {
+					_, err = io.WriteString(serverConn, "* VANISHED (EARLIER) 5:7\r\n* STATUS INBOX (MESSAGES 3 UIDNEXT 4)\r\n"+tag+" OK status complete\r\n")
+				} else {
+					_, err = io.WriteString(serverConn, "* FLAGS (\\Seen)\r\n* 3 EXISTS\r\n* OK [UIDVALIDITY 1] valid\r\n* OK [UIDNEXT 8] next\r\n* VANISHED (EARLIER) 5:7\r\n"+tag+" OK [READ-ONLY] selected\r\n")
+				}
+				serverErr <- err
+			}()
+
+			if command == "STATUS" {
+				_, err := wire.Status("INBOX", &imapv2.StatusOptions{NumMessages: true}).Wait()
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := wire.Select("INBOX", &imapv2.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case result := <-vanished:
+				if !result.earlier || !result.set.Contains(5) || !result.set.Contains(7) {
+					t.Fatalf("unexpected VANISHED response: %+v", result)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("unsolicited VANISHED was not handled")
+			}
+			if err := <-serverErr; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestSyncOptionsWakeOnVanished(t *testing.T) {
 	wake := make(chan struct{}, 1)
 	handler := syncOptions(func() { wake <- struct{}{} }).UnilateralDataHandler

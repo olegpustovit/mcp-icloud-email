@@ -8,15 +8,15 @@ import (
 	"github.com/olegpustovit/mcp-icloud-email/imap"
 )
 
-func TestFetchResilientIsolatesAndQuarantinesOneUID(t *testing.T) {
+func TestFetchResilientQuarantinesLoggedBodyStructureUIDInBatchOfFifty(t *testing.T) {
 	uids := make([]uint32, 50)
 	for i := range uids {
-		uids[i] = uint32(i + 1)
+		uids[i] = uint32(i + 941)
 	}
 	fetch := func(batch []uint32) ([]imap.Email, error) {
 		for _, uid := range batch {
-			if uid == 13 {
-				return nil, errors.New("imapwire: malformed FETCH response")
+			if uid == 990 {
+				return nil, errors.New(`in response-data: in body-type-mpart: in body-type-1part: in body-ext-1part: imapwire: expected string, got " "`)
 			}
 		}
 		messages := make([]imap.Email, len(batch))
@@ -30,7 +30,7 @@ func TestFetchResilientIsolatesAndQuarantinesOneUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 50 || len(broken) != 1 || !broken[13] {
+	if len(messages) != 50 || len(broken) != 1 || !broken[990] {
 		t.Fatalf("fetched %d messages, quarantine=%v", len(messages), broken)
 	}
 }

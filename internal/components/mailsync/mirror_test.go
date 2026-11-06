@@ -3,6 +3,7 @@ package mailsync
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	imapv2 "github.com/emersion/go-imap/v2"
 	"github.com/olegpustovit/mcp-icloud-email/imap"
 	"github.com/olegpustovit/mcp-icloud-email/internal/components/auth"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -49,6 +51,12 @@ type syncFake struct {
 	once            sync.Once
 	names           []string
 	resetAfterFetch bool
+}
+
+type timedOutFetchSync struct{ *syncFake }
+
+func (f timedOutFetchSync) Fetch(string, []uint32, uint64, bool) ([]imap.Email, error) {
+	return nil, errors.New("IMAP UID FETCH timed out after 60s")
 }
 
 func (f *syncFake) Folders() ([]imap.FolderInfo, error) {
@@ -286,6 +294,61 @@ func TestMirrorImportDeltaExpungeAndUIDReset(t *testing.T) {
 	_, _, other, _, err := s.Bootstrap(ctx, "other@olegpustovit.com", account)
 	if err != nil || len(other) != 0 {
 		t.Fatal("bootstrap leaked another owner's mailbox")
+	}
+}
+
+func TestReconcileVanishedDeletesUIDRange(t *testing.T) {
+	s := testMirror(t)
+	ctx := context.Background()
+	owner, account := "owner@example.com", "account@example.com"
+	fake := &syncFake{mail: map[uint32]imap.Email{
+		5: {ID: "5", Subject: "five", Date: time.Now()},
+		6: {ID: "6", Subject: "six", Date: time.Now()},
+		7: {ID: "7", Subject: "seven", Date: time.Now()},
+	}, validity: 7, next: 8, modseq: 1, closed: make(chan struct{})}
+	m := &monitor{owner: owner, account: account, ctx: ctx, folders: map[string]Folder{}, messages: map[string]map[uint32]Metadata{}, ready: make(chan struct{})}
+	if err := s.reconcileFolder(m, fake, "INBOX", false, "imap", ""); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	fake.mail = map[uint32]imap.Email{}
+	fake.mu.Unlock()
+	var vanished imapv2.UIDSet
+	vanished.AddRange(5, 7)
+	if err := s.reconcileVanished(m, fake, imap.SyncEvent{Kind: "vanished", Folder: "INBOX", UIDs: vanished, Earlier: true}); err != nil {
+		t.Fatal(err)
+	}
+	count, err := s.db.Collection("mail_messages").CountDocuments(ctx, bson.M{"owner": owner, "account": account})
+	if err != nil || count != 0 {
+		t.Fatalf("remaining messages=%d err=%v, want 0", count, err)
+	}
+}
+
+func TestTimedOutFetchReconnectsAndCompletesImport(t *testing.T) {
+	s := testMirror(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	owner, account := "owner@example.com", "account@example.com"
+	fake := &syncFake{mail: map[uint32]imap.Email{1: {ID: "1", Subject: "one", Date: time.Now()}}, validity: 7, next: 2, modseq: 1, closed: make(chan struct{})}
+	attempts := 0
+	s.dialSync = func(context.Context, string, string, func()) (syncTransport, error) {
+		attempts++
+		if attempts == 1 {
+			return timedOutFetchSync{fake}, nil
+		}
+		return fake, nil
+	}
+	if _, err := s.Mailbox(ctx, owner, "web"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WaitReady(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	if attempts < 2 {
+		t.Fatalf("sync connections=%d, want reconnect after FETCH deadline", attempts)
+	}
+	if count, err := s.db.Collection("mail_messages").CountDocuments(ctx, bson.M{"owner": owner, "account": account}); err != nil || count != 1 {
+		t.Fatalf("mirrored messages=%d err=%v, want 1", count, err)
 	}
 }
 

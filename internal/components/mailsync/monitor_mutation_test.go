@@ -43,7 +43,8 @@ func TestWatchdogRestartsAfterStaleProgress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stalled := make(chan struct{})
-	stop := watchProgress(ctx, &progress, time.Millisecond, 10*time.Millisecond, func() { close(stalled) })
+	clock := time.Now()
+	stop := watchProgress(ctx, &progress, time.Millisecond, 10*time.Millisecond, func() time.Time { return clock }, func() { close(stalled) })
 	defer stop()
 	select {
 	case <-stalled:

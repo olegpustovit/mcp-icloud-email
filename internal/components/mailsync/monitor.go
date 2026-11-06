@@ -189,8 +189,8 @@ func (s *Service) monitor(m *monitor) {
 }
 func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 	m.lastProgress.Store(time.Now().UnixNano())
-	stopWatchdog := watchProgress(m.ctx, &m.lastProgress, 15*time.Second, 3*time.Minute, func() {
-		age := time.Since(time.Unix(0, m.lastProgress.Load()))
+	stopWatchdog := watchProgress(m.ctx, &m.lastProgress, 15*time.Second, 3*time.Minute, time.Now, func() {
+		age := time.Now().Sub(time.Unix(0, m.lastProgress.Load()))
 		slog.Error("mail sync stalled", "owner", m.owner, "age", age)
 		ctx, cancel := context.WithTimeout(m.ctx, 5*time.Second)
 		if status, err := s.Status(ctx, m.owner, m.account); err == nil {
@@ -349,6 +349,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 			}
 		case "event":
 			if event.Kind == "vanished" {
+				slog.Info("mail sync VANISHED", "folder", event.Folder, "uids", event.UIDs.String(), "earlier", event.Earlier)
 				err = s.reconcileVanished(m, wire, event)
 			} else if event.Kind == "fetch" && event.Folder != "" {
 				uids, ok := event.Numbers()
@@ -391,7 +392,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 	return m.ctx.Err()
 }
 
-func watchProgress(ctx context.Context, lastProgress *atomic.Int64, interval, staleAfter time.Duration, onStall func()) func() {
+func watchProgress(ctx context.Context, lastProgress *atomic.Int64, interval, staleAfter time.Duration, now func() time.Time, onStall func()) func() {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -403,7 +404,7 @@ func watchProgress(ctx context.Context, lastProgress *atomic.Int64, interval, st
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if age := time.Since(time.Unix(0, lastProgress.Load())); age > staleAfter {
+				if age := now().Sub(time.Unix(0, lastProgress.Load())); age > staleAfter {
 					onStall()
 					return
 				}
