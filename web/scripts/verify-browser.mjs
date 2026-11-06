@@ -147,7 +147,7 @@ try{
  await page.keyboard.press('U')
  await page.waitForTimeout(200)
  await page.reload();await page.locator('.row.un').first().waitFor({timeout:10000}).catch(async err=>{console.error('Offline page:',await page.locator('body').innerText());console.error('Offline state:',await page.evaluate(()=>({online:navigator.onLine,last:localStorage.getItem('mail.lastAccount')})));console.error('DBs:',await page.evaluate(()=>indexedDB.databases()));await page.screenshot({animations:'disabled',fullPage:true,path:'../.impeccable/review/offline-failure.png'});throw err})
- assert.match(await page.locator('.stat').innerText(),/QUEUED/)
+ assert.match(await page.locator('.stat').innerText(),/OFFLINE \/\/ CHANGES WAIT FOR THE CONNECTION/)
  mutation=waitEvent('mutation');networkDown=false;await context.setOffline(false);await page.evaluate(()=>window.dispatchEvent(new Event('online')));await mutation;assert.equal(focusedEmail.unread,true)
  await page.keyboard.press('c');await page.getByLabel('To',{exact:true}).fill('you@example.com');await page.getByLabel('Subject',{exact:true}).fill('A real compose field');await page.getByLabel('Message body').fill('An editable message')
  await page.keyboard.press('Escape');await page.locator('[data-a="restore-compose"]').click();assert.equal(await page.getByLabel('Message body').inputValue(),'An editable message')
