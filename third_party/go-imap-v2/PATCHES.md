@@ -1,0 +1,1 @@
+This is github.com/emersion/go-imap/v2 v2.0.0-beta.8. The local patch adds parsing and an unsolicited-data callback for VANISHED responses; the application uses that callback to schedule a full folder reconciliation.

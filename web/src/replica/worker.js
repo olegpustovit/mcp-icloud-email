@@ -6,6 +6,8 @@ import {syncRetryDelay} from './retry-delay.js'
 let db,owner='',account='',draining=false,historyTask,streamController,syncTask,announceTimer,cursor=0,localWrites=Promise.resolve()
 let status={phase:'connecting',ready:false,imported:0,total:0},prefs={vip:[]}
 const ports=new Set(),metadata=new Map(),folders=new Map(),indexed=new Map(),words=new Map(),bodyRequests=new Map(),tombstones=new Map()
+const mirrorChannel=typeof BroadcastChannel==='undefined'?null:new BroadcastChannel('terminal-mail-replica')
+let syncLockHeld=false
 let prefetchTimer,prefetching=false,prefetchQueue=[],cacheWarning=false,bodyGeneration=0
 const remoteSearches=new Map(),portQueries=new Map(),bodySearches=new Map()
 const broadcast=data=>{for(const port of ports)port.postMessage(data)}
@@ -27,7 +29,8 @@ function indexMessage(raw){
 }
 function deleteMessage(key){const row=indexed.get(key);if(row)for(const word of row.words){const set=words.get(word);set?.delete(key);if(!set?.size)words.delete(word)};indexed.delete(key);metadata.delete(key)}
 // Throttle, not debounce: history backfill announces per page, and every mirror makes each tab requery and redraw.
-function announce(){announceTimer??=setTimeout(()=>{announceTimer=null;broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs})},400)}
+function announce(){announceTimer??=setTimeout(()=>{announceTimer=null;const update={type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs};broadcast(update);if(syncLockHeld)mirrorChannel?.postMessage({type:'refresh'})},400)}
+mirrorChannel?.addEventListener('message',()=>{if(db)localWrite(async()=>{await hydrate();broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs})}).catch(err=>broadcast({type:'storage-error',error:err.message}))})
 async function queueStatus(){const txs=await all('transactions');broadcast({type:'queue',pending:txs.filter(tx=>['pending','awaiting-sync'].includes(tx.status)).length,rejected:txs.filter(tx=>tx.status==='rejected')})}
 async function drain(){if(draining||!db)return;draining=true;let progressed=0;try{progressed=await drainQueue(db,{owner,account},broadcast)}catch(err){broadcast({type:'storage-error',error:err.message})}finally{draining=false}if(progressed&&(await all('transactions')).some(tx=>tx.status==='pending'))setTimeout(drain,0)}
 function localWrite(run){const pending=localWrites.then(run);localWrites=pending.catch(()=>{});return pending}
@@ -127,6 +130,7 @@ async function synchronize(){
   if(syncTask)return syncTask
   streamController=new AbortController();const signal=streamController.signal
   syncTask=(async()=>{
+    const loop=async()=>{
     let backoff=500,needsBootstrap=!(await read('settings','bootstrapped'))
     while(!signal.aborted){
       try{
@@ -145,6 +149,11 @@ async function synchronize(){
       await new Promise(resolve=>{const timer=setTimeout(resolve,syncRetryDelay(backoff));signal.addEventListener('abort',()=>{clearTimeout(timer);resolve()},{once:true})})
       backoff=Math.min(backoff*2,30000)
     }
+    }
+    if(navigator.locks?.request){
+      try{await navigator.locks.request('terminal-mail-sync',{mode:'exclusive',signal},async()=>{syncLockHeld=true;try{await loop()}finally{syncLockHeld=false}})}
+      catch(err){if(!signal.aborted)throw err}
+    }else await loop()
   })().finally(()=>{syncTask=null})
   return syncTask
 }

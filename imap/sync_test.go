@@ -1,6 +1,7 @@
 package imap
 
 import (
+	"bufio"
 	"io"
 	"net"
 	"net/mail"
@@ -124,6 +125,63 @@ func TestSyncCommandDeadlineClosesWire(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("got %v, want timeout", err)
+	}
+}
+
+func TestVanishedUnilateralResponseWakesSync(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	vanished := make(chan struct {
+		set     imapv2.UIDSet
+		earlier bool
+	}, 2)
+	wire := imapclient.New(clientConn, &imapclient.Options{UnilateralDataHandler: &imapclient.UnilateralDataHandler{
+		Vanished: func(set imapv2.UIDSet, earlier bool) {
+			vanished <- struct {
+				set     imapv2.UIDSet
+				earlier bool
+			}{set, earlier}
+		},
+	}})
+	t.Cleanup(func() { _ = wire.Close(); _ = serverConn.Close() })
+	serverErr := make(chan error, 1)
+	go func() {
+		reader := bufio.NewReader(serverConn)
+		if _, err := io.WriteString(serverConn, "* OK ready\r\n"); err != nil {
+			serverErr <- err
+			return
+		}
+		command, _ := reader.ReadString('\n')
+		if fields := strings.Fields(command); len(fields) > 0 {
+			_, err := io.WriteString(serverConn, "* CAPABILITY IMAP4rev1\r\n"+fields[0]+" OK capability complete\r\n* VANISHED (EARLIER) 5:7\r\n* VANISHED 8:9\r\n")
+			if err != nil {
+				serverErr <- err
+			}
+		} else {
+			serverErr <- io.ErrUnexpectedEOF
+		}
+	}()
+	select {
+	case result := <-vanished:
+		if !result.earlier || !result.set.Contains(5) || !result.set.Contains(7) {
+			t.Fatalf("unexpected VANISHED response: %+v", result)
+		}
+	case <-time.After(time.Second):
+		select {
+		case err := <-serverErr:
+			t.Fatalf("server exchange failed: %v", err)
+		case <-wire.Closed():
+			t.Fatal("client closed before VANISHED callback")
+		default:
+			t.Fatal("VANISHED response was not handled")
+		}
+	}
+	select {
+	case result := <-vanished:
+		if result.earlier || result.set.String() != "8:9" {
+			t.Fatalf("unexpected current VANISHED response: %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("current VANISHED response was not handled")
 	}
 }
 

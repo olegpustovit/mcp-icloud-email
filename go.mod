@@ -17,6 +17,8 @@ require (
 	golang.org/x/net v0.62.0
 )
 
+replace github.com/emersion/go-imap/v2 => ./third_party/go-imap-v2
+
 require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect

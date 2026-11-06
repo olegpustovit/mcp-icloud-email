@@ -80,7 +80,7 @@ func syncOptions(notify func()) *imapclient.Options {
 		}
 	}
 	return &imapclient.Options{Dialer: &net.Dialer{Timeout: timeout}, WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, UnilateralDataHandler: &imapclient.UnilateralDataHandler{
-		Mailbox: func(*imapclient.UnilateralDataMailbox) { n() }, Expunge: func(uint32) { n() }, Fetch: func(*imapclient.FetchMessageData) { n() },
+		Mailbox: func(*imapclient.UnilateralDataMailbox) { n() }, Expunge: func(uint32) { n() }, Fetch: func(*imapclient.FetchMessageData) { n() }, Vanished: func(imapv2.UIDSet, bool) { n() },
 	}}
 }
 func NewSyncClient(ctx context.Context, address, password string, notify func()) (*SyncClient, error) {
