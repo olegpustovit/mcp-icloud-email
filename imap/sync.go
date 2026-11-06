@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	imapv2 "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -28,6 +29,31 @@ type SyncClient struct {
 	wire       *imapclient.Client
 	stopCancel func() bool
 }
+
+func syncCommand[T any](c *SyncClient, name string, timeout time.Duration, run func() (T, error)) (T, error) {
+	type result struct {
+		value T
+		err   error
+	}
+	done := make(chan result, 1)
+	timer := time.NewTimer(timeout)
+	go func() {
+		value, err := run()
+		done <- result{value, err}
+	}()
+	select {
+	case result := <-done:
+		timer.Stop()
+		return result.value, result.err
+	case <-timer.C:
+		_ = c.wire.Close()
+		var zero T
+		return zero, fmt.Errorf("IMAP %s timed out after %s", name, timeout)
+	}
+}
+
+const syncCommandTimeout = 20 * time.Second
+const syncFetchTimeout = 60 * time.Second
 
 var ErrSyncAuthentication = errors.New("iCloud app-specific password was rejected")
 
@@ -64,7 +90,7 @@ func NewSyncClient(ctx context.Context, address, password string, notify func())
 	}
 	c := &SyncClient{wire: wire}
 	c.stopCancel = context.AfterFunc(ctx, func() { _ = wire.Close() })
-	if err = wire.Login(address, password).Wait(); err != nil {
+	if _, err = syncCommand(c, "LOGIN", syncCommandTimeout, func() (struct{}, error) { return struct{}{}, wire.Login(address, password).Wait() }); err != nil {
 		_ = c.Close()
 		return nil, fmt.Errorf("%w: %v", ErrSyncAuthentication, err)
 	}
@@ -80,10 +106,12 @@ func (c *SyncClient) Closed() <-chan struct{} { return c.wire.Closed() }
 func (c *SyncClient) CondStore() bool         { return c.wire.Caps().Has(imapv2.CapCondStore) }
 func (c *SyncClient) CanIdle() bool           { return c.wire.Caps().Has(imapv2.CapIdle) }
 func (c *SyncClient) StartIdle() (func() error, error) {
-	if _, err := c.wire.Select("INBOX", &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait(); err != nil {
+	if _, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
+		return c.wire.Select("INBOX", &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
+	}); err != nil {
 		return nil, err
 	}
-	idle, err := c.wire.Idle()
+	idle, err := syncCommand(c, "IDLE", syncCommandTimeout, c.wire.Idle)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +120,7 @@ func (c *SyncClient) StartIdle() (func() error, error) {
 	return func() error {
 		once.Do(func() {
 			stopErr = idle.Close()
-			if err := idle.Wait(); stopErr == nil {
+			if _, err := syncCommand(c, "IDLE", syncCommandTimeout, func() (struct{}, error) { return struct{}{}, idle.Wait() }); stopErr == nil {
 				stopErr = err
 			}
 		})
@@ -101,7 +129,7 @@ func (c *SyncClient) StartIdle() (func() error, error) {
 }
 func (c *SyncClient) Folders() ([]FolderInfo, error) {
 	options := &imapv2.ListOptions{ReturnSpecialUse: c.wire.Caps().Has(imapv2.CapSpecialUse)}
-	rows, err := c.wire.List("", "*", options).Collect()
+	rows, err := syncCommand(c, "LIST", syncCommandTimeout, func() ([]*imapv2.ListData, error) { return c.wire.List("", "*", options).Collect() })
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +169,9 @@ func folderRole(name string, attrs []string) string {
 	return map[string]string{"inbox": "inbox", "drafts": "drafts", "sent": "sent", "sent messages": "sent", "archive": "archive", "junk": "junk", "spam": "junk", "deleted messages": "trash", "trash": "trash", "snoozed": "snoozed"}[strings.ToLower(name)]
 }
 func (c *SyncClient) Status(name string) (FolderInfo, error) {
-	data, err := c.wire.Status(name, &imapv2.StatusOptions{NumMessages: true, NumUnseen: true, UIDNext: true, UIDValidity: true, HighestModSeq: c.CondStore()}).Wait()
+	data, err := syncCommand(c, "STATUS", syncCommandTimeout, func() (*imapv2.StatusData, error) {
+		return c.wire.Status(name, &imapv2.StatusOptions{NumMessages: true, NumUnseen: true, UIDNext: true, UIDValidity: true, HighestModSeq: c.CondStore()}).Wait()
+	})
 	if err != nil {
 		return FolderInfo{}, err
 	}
@@ -155,10 +185,12 @@ func (c *SyncClient) Status(name string) (FolderInfo, error) {
 	return f, nil
 }
 func (c *SyncClient) UIDs(folder string) ([]uint32, error) {
-	if _, err := c.wire.Select(folder, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait(); err != nil {
+	if _, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
+		return c.wire.Select(folder, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
+	}); err != nil {
 		return nil, err
 	}
-	data, err := c.wire.UIDSearch(&imapv2.SearchCriteria{}, nil).Wait()
+	data, err := syncCommand(c, "UID SEARCH", syncCommandTimeout, func() (*imapv2.SearchData, error) { return c.wire.UIDSearch(&imapv2.SearchCriteria{}, nil).Wait() })
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +206,9 @@ func (c *SyncClient) Fetch(folder string, uids []uint32, since uint64, flagsOnly
 	if len(uids) == 0 {
 		return []Email{}, nil
 	}
-	selected, err := c.wire.Select(folder, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
+	selected, err := syncCommand(c, "SELECT", syncCommandTimeout, func() (*imapv2.SelectData, error) {
+		return c.wire.Select(folder, &imapv2.SelectOptions{ReadOnly: true, CondStore: c.CondStore()}).Wait()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +230,7 @@ func (c *SyncClient) Fetch(folder string, uids []uint32, since uint64, flagsOnly
 		// No BODYSTRUCTURE: iCloud returns structures go-imap rejects, and the parse error kills the sync connection, which then refetches the same message forever.
 		options.BodySection = []*imapv2.FetchItemBodySection{header, preview}
 	}
-	rows, err := c.wire.Fetch(set, options).Collect()
+	rows, err := syncCommand(c, "UID FETCH", syncFetchTimeout, func() ([]*imapclient.FetchMessageBuffer, error) { return c.wire.Fetch(set, options).Collect() })
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +249,7 @@ func (c *SyncClient) Quota() (*StorageQuota, error) {
 	if !c.wire.Caps().Has(imapv2.CapQuota) {
 		return nil, nil
 	}
-	rows, err := c.wire.GetQuotaRoot("INBOX").Wait()
+	rows, err := syncCommand(c, "GETQUOTAROOT", syncCommandTimeout, func() ([]imapclient.QuotaData, error) { return c.wire.GetQuotaRoot("INBOX").Wait() })
 	if err != nil {
 		return nil, err
 	}

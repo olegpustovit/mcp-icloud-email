@@ -264,6 +264,7 @@ kbd{display:inline-grid;place-items:center;min-width:14px;height:14px;padding:0 
 .empty{display:grid;place-items:center;align-content:center;gap:12px;text-align:center;padding:24px;flex:1}
 
 .stat{display:flex;align-items:center;gap:10px;height:var(--bar);padding:0 12px;border-top:var(--frame);background:var(--paper-2);font:500 var(--fs-label)/1 var(--f-mono);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden}
+.stat.stale{color:var(--sig-red)}
 .led{width:7px;height:7px;background:var(--ink);display:inline-block;margin-right:6px}
 .led.off{background:transparent;border:1px solid var(--line)}
 .blocks{display:inline-flex;gap:2px;margin-right:6px}.blocks i{width:5px;height:9px;border:1px solid currentColor}

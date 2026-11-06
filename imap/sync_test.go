@@ -114,6 +114,19 @@ func TestSyncTransportMetadataPeekAndIDLE(t *testing.T) {
 	}
 }
 
+func TestSyncCommandDeadlineClosesWire(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
+	client := &SyncClient{wire: imapclient.New(clientConn, nil)}
+	_, err := syncCommand(client, "blocked test", 20*time.Millisecond, func() (struct{}, error) {
+		<-client.Closed()
+		return struct{}{}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("got %v, want timeout", err)
+	}
+}
+
 func TestPartialMIMESnippet(t *testing.T) {
 	for _, test := range []struct{ header, body, want string }{
 		{"Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n", "SGVsbG8gd29ybGQ=", "Hello world"},

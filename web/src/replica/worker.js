@@ -2,6 +2,7 @@ import {stores,open,read as storageRead,all as storageAll,write as storageWrite,
 import {lines,readEvents} from './stream.js'
 import {address,matches,role,conversations,rebase,searchTokens} from '../model.js'
 import {cacheBody} from './body-cache.js'
+import {syncRetryDelay} from './retry-delay.js'
 let db,owner='',account='',draining=false,historyTask,streamController,syncTask,announceTimer,cursor=0,localWrites=Promise.resolve()
 let status={phase:'connecting',ready:false,imported:0,total:0},prefs={vip:[]}
 const ports=new Set(),metadata=new Map(),folders=new Map(),indexed=new Map(),words=new Map(),bodyRequests=new Map(),tombstones=new Map()
@@ -94,20 +95,33 @@ async function persist(changes){
 async function bootstrap(signal){
   const response=await fetch('/api/mail/sync/bootstrap',{credentials:'same-origin',headers:headers(),signal})
   if(!response.ok)throw new Error(`Mailbox bootstrap failed (${response.status})`)
-  const records=[]
-  for await(const line of lines(response.body)){if(line.trim())records.push(JSON.parse(line))}
-  const start=records.find(row=>row.type==='bootstrap'),end=records.find(row=>row.type==='ready')
+  let start,end;const staged=[]
+  const writeStage=async()=>{
+    if(!staged.length)return
+    await new Promise((resolve,reject)=>{const tx=db.transaction([...new Set(staged.map(row=>row.store))],'readwrite');for(const row of staged)tx.objectStore(row.store).put({key:row.value.key,value:row.value});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Mailbox staging failed'))})
+    staged.length=0
+  }
+  for await(const line of lines(response.body)){
+    if(signal.aborted)return
+    if(!line.trim())continue
+    const row=JSON.parse(line)
+    if(row.type==='bootstrap'){
+      start=row
+      await new Promise((resolve,reject)=>{const tx=db.transaction(['meta-stage','folders-stage'],'readwrite');tx.objectStore('meta-stage').clear();tx.objectStore('folders-stage').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})
+    }else if(row.type==='ready')end=row
+    else if(row.type==='msg'&&row.message)staged.push({store:'meta-stage',value:row.message})
+    else if(row.type==='folder'&&row.folder)staged.push({store:'folders-stage',value:row.folder})
+    if(staged.length>=100)await writeStage()
+  }
+  await writeStage()
   if(!start||!end)throw new Error('Mailbox bootstrap was interrupted')
-  const mail=records.filter(row=>row.type==='msg').map(row=>row.message),boxes=records.filter(row=>row.type==='folder').map(row=>row.folder)
   await new Promise((resolve,reject)=>{
-    const tx=db.transaction(['meta','folders','cursor','settings','transactions','tombstones'],'readwrite');tx.objectStore('meta').clear();tx.objectStore('folders').clear();tx.objectStore('tombstones').clear()
-    for(const message of mail)tx.objectStore('meta').put({key:message.key,value:message})
-    for(const folder of boxes)tx.objectStore('folders').put({key:folder.key,value:folder})
+    const tx=db.transaction(['meta','folders','cursor','settings','transactions','tombstones','meta-stage','folders-stage'],'readwrite');tx.objectStore('meta').clear();tx.objectStore('folders').clear();tx.objectStore('tombstones').clear()
+    for(const [source,target]of [['meta-stage','meta'],['folders-stage','folders']]){const from=tx.objectStore(source),to=tx.objectStore(target),cursor=from.openCursor();cursor.onsuccess=()=>{const row=cursor.result;if(!row)return;to.put(row.value);row.delete();row.continue()}}
     const queued=tx.objectStore('transactions').openCursor();queued.onsuccess=()=>{const row=queued.result;if(!row)return;const transaction=row.value.value;if(transaction.status==='awaiting-sync'&&transaction.ackCursor<=end.syncId)row.delete();row.continue()};tx.objectStore('cursor').put({key:'sync',value:end.syncId});tx.objectStore('settings').put({key:'sync',value:start.status});tx.objectStore('settings').put({key:'preferences',value:start.prefs})
-    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Mailbox bootstrap could not be committed'))
   })
-  metadata.clear();indexed.clear();words.clear();folders.clear();tombstones.clear();await write('settings','history',{complete:false,before:''});for(const message of mail)indexMessage(message);for(const folder of boxes)folders.set(folder.key,folder)
-  cursor=end.syncId;status=start.status;prefs=start.prefs;announce()
+  await write('settings','history',{complete:false,before:''});await hydrate();announce()
 }
 async function synchronize(){
   if(syncTask)return syncTask
@@ -128,7 +142,7 @@ async function synchronize(){
         })
       }catch(err){if(signal.aborted)return;broadcast({type:'sync-disconnected',error:err.message})}
       if(signal.aborted)return
-      await new Promise(resolve=>{const timer=setTimeout(resolve,needsBootstrap?0:backoff);signal.addEventListener('abort',()=>{clearTimeout(timer);resolve()},{once:true})})
+      await new Promise(resolve=>{const timer=setTimeout(resolve,syncRetryDelay(backoff));signal.addEventListener('abort',()=>{clearTimeout(timer);resolve()},{once:true})})
       backoff=Math.min(backoff*2,30000)
     }
   })().finally(()=>{syncTask=null})

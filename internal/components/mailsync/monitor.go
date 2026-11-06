@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/olegpustovit/mcp-icloud-email/imap"
@@ -50,6 +51,7 @@ type monitor struct {
 	order                    []string
 	backfill                 int
 	quota                    *imap.StorageQuota
+	lastProgress             atomic.Int64
 }
 
 func (s *Service) Start(ctx context.Context, owner string) (*monitor, error) {
@@ -180,6 +182,36 @@ func (s *Service) monitor(m *monitor) {
 	}
 }
 func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
+	m.lastProgress.Store(time.Now().UnixNano())
+	watchdogDone := make(chan struct{})
+	defer close(watchdogDone)
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watchdogDone:
+				return
+			case <-m.ctx.Done():
+				return
+			case <-ticker.C:
+				if time.Since(time.Unix(0, m.lastProgress.Load())) <= 3*time.Minute {
+					continue
+				}
+				slog.Error("mail sync stalled", "owner", m.owner, "age", time.Since(time.Unix(0, m.lastProgress.Load())))
+				ctx, cancel := context.WithTimeout(m.ctx, 5*time.Second)
+				if status, err := s.Status(ctx, m.owner, m.account); err == nil {
+					status.Phase = "stalled"
+					status.Error = "Synchronization made no progress for three minutes."
+					status.At = time.Now().UTC()
+					_ = s.commit(ctx, m.owner, m.account, "system", "", []Change{{Entity: "status", Op: "put", Key: m.owner, Status: &status}})
+				}
+				cancel()
+				_ = wire.Close()
+				return
+			}
+		}
+	}()
 	folders, err := wire.Folders()
 	if err != nil {
 		return err
@@ -341,6 +373,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 				}
 			}
 		}
+		m.lastProgress.Store(time.Now().UnixNano())
 	}
 	return m.ctx.Err()
 }
@@ -402,7 +435,8 @@ func (s *Service) refreshFolders(m *monitor, wire syncTransport, request refresh
 	return nil
 }
 func (s *Service) syncStatus(m *monitor, phase, mode, problem string) error {
-	status := SyncStatus{Owner: m.owner, Account: m.account, Phase: phase, Mode: mode, Error: problem, Quota: m.quota, At: time.Now().UTC()}
+	now := time.Now().UTC()
+	status := SyncStatus{Owner: m.owner, Account: m.account, Phase: phase, Mode: mode, Error: problem, Quota: m.quota, At: now}
 	select {
 	case <-m.ready:
 		status.Ready = true
@@ -416,7 +450,7 @@ func (s *Service) syncStatus(m *monitor, phase, mode, problem string) error {
 	if err != nil {
 		return err
 	}
-	if previous.Phase == status.Phase && previous.Mode == status.Mode && previous.Error == status.Error && previous.Ready == status.Ready && previous.Imported == status.Imported && previous.Total == status.Total && ((previous.Quota == nil && status.Quota == nil) || (previous.Quota != nil && status.Quota != nil && *previous.Quota == *status.Quota)) {
+	if previous.Phase == status.Phase && previous.Mode == status.Mode && previous.Error == status.Error && previous.Ready == status.Ready && previous.Imported == status.Imported && previous.Total == status.Total && now.Sub(previous.At) < time.Minute && ((previous.Quota == nil && status.Quota == nil) || (previous.Quota != nil && status.Quota != nil && *previous.Quota == *status.Quota)) {
 		return nil
 	}
 	return s.commit(m.ctx, m.owner, m.account, "system", "", []Change{{Entity: "status", Op: "put", Key: m.owner, Status: &status}})

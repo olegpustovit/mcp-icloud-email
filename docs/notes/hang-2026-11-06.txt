@@ -1,0 +1,29 @@
+Production sync hang captured 2026-11-06 UTC before restart
+Process received SIGQUIT; smdctl restarted it automatically. The full service log remains on oracle-vm.
+The monitor goroutine was blocked waiting for the batch FETCH command to complete:
+goroutine 91 gp=0x10fd77c77860 m=nil [chan receive, 4147 minutes]:
+runtime.gopark(0x10fd77b2a5a8?, 0x3145c?, 0xd8?, 0xed?, 0xeace36201688?)
+	/home/snowbear/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-arm64/src/runtime/proc.go:462 +0xbc fp=0x10fd77f4ed70 sp=0x10fd77f4ed50 pc=0x920ac
+runtime.chanrecv(0x10fd77a835e0, 0x10fd77f4ee40, 0x1)
+	/home/snowbear/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-arm64/src/runtime/chan.go:667 +0x470 fp=0x10fd77f4edf0 sp=0x10fd77f4ed70 pc=0x28a90
+runtime.chanrecv1(0x10fd77dbcc20?, 0x44b210?)
+	/home/snowbear/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-arm64/src/runtime/chan.go:509 +0x14 fp=0x10fd77f4ee20 sp=0x10fd77f4edf0 pc=0x285e4
+github.com/emersion/go-imap/v2/imapclient.(*FetchCommand).Next(0x10fd77c1e480)
+	/home/snowbear/go/pkg/mod/github.com/emersion/go-imap/v2@v2.0.0-beta.8/imapclient/fetch.go:197 +0x40 fp=0x10fd77f4ee50 sp=0x10fd77f4ee20 pc=0x44a9a0
+github.com/emersion/go-imap/v2/imapclient.(*FetchCommand).Collect(0x10fd77c1e480)
+	/home/snowbear/go/pkg/mod/github.com/emersion/go-imap/v2@v2.0.0-beta.8/imapclient/fetch.go:224 +0x88 fp=0x10fd77f4ef20 sp=0x10fd77f4ee50 pc=0x44ab38
+github.com/olegpustovit/mcp-icloud-email/imap.(*SyncClient).Fetch(0x10fd784c13b0, {0x8fea3c, 0x5}, {0x10fd78c62cb8, 0x1, 0x10fd7793a810?}, 0x0, 0x0)
+	/home/snowbear/projects/mcp-icloud-email/imap/sync.go:199 +0x3a0 fp=0x10fd77f4f410 sp=0x10fd77f4ef20 pc=0x47aac0
+github.com/olegpustovit/mcp-icloud-email/internal/components/mailsync.(*Service).reconcileFolder(0x10fd77a183c0, 0x10fd77b4be00, {0xcab8c8, 0x10fd784c13b0}, {0x8fea3c, 0x5}, 0x0, {0x8fe0a2, 0x4}, {0x0, ...})
+	/home/snowbear/projects/mcp-icloud-email/internal/components/mailsync/monitor.go:502 +0xd3c fp=0x10fd77f51570 sp=0x10fd77f4f410 pc=0x66a7dc
+github.com/olegpustovit/mcp-icloud-email/internal/components/mailsync.(*Service).monitorConnected(0x10fd77a183c0, 0x10fd77b4be00, {0xcab8c8, 0x10fd784c13b0})
+	/home/snowbear/projects/mcp-icloud-email/internal/components/mailsync/monitor.go:317 +0xdec fp=0x10fd77f51e10 sp=0x10fd77f51570 pc=0x66841c
+github.com/olegpustovit/mcp-icloud-email/internal/components/mailsync.(*Service).monitor(0x10fd77a183c0, 0x10fd77b4be00)
+	/home/snowbear/projects/mcp-icloud-email/internal/components/mailsync/monitor.go:159 +0x14c fp=0x10fd77f51f10 sp=0x10fd77f51e10 pc=0x66736c
+github.com/olegpustovit/mcp-icloud-email/internal/components/mailsync.(*Service).Start.func1()
+	/home/snowbear/projects/mcp-icloud-email/internal/components/mailsync/monitor.go:104 +0xd4 fp=0x10fd77f51fd0 sp=0x10fd77f51f10 pc=0x666c94
+runtime.goexit({})
+	/home/snowbear/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-arm64/src/runtime/asm_arm64.s:1447 +0x4 fp=0x10fd77f51fd0 sp=0x10fd77f51fd0 pc=0x994a4
+created by github.com/olegpustovit/mcp-icloud-email/internal/components/mailsync.(*Service).Start in goroutine 1
+	/home/snowbear/projects/mcp-icloud-email/internal/components/mailsync/monitor.go:94 +0x684
+

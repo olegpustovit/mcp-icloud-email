@@ -56,6 +56,11 @@ type SyncStatus struct {
 	Quota    *imap.StorageQuota `bson:"quota,omitempty" json:"quota,omitempty"`
 	At       time.Time          `bson:"at" json:"at"`
 }
+type SyncHealth struct {
+	LastProgressAgeSec int64  `json:"lastProgressAgeSec"`
+	Phase              string `json:"phase"`
+	Reconnects1h       int64  `json:"reconnects1h"`
+}
 type Change struct {
 	ID              string        `bson:"_id" json:"-"`
 	Owner           string        `bson:"owner" json:"-"`
@@ -382,6 +387,33 @@ func (s *Service) Status(ctx context.Context, owner, account string) (SyncStatus
 		return SyncStatus{Owner: owner, Account: account, Phase: "connecting"}, nil
 	}
 	return status, err
+}
+func (s *Service) SyncHealth(ctx context.Context) (SyncHealth, error) {
+	health := SyncHealth{Phase: "idle"}
+	rows, err := s.db.Collection("mail_sync_status").Find(ctx, bson.M{})
+	if err != nil {
+		return health, err
+	}
+	var statuses []SyncStatus
+	err = rows.All(ctx, &statuses)
+	_ = rows.Close(ctx)
+	if err != nil {
+		return health, err
+	}
+	now := time.Now().UTC()
+	for _, status := range statuses {
+		age := int64(now.Sub(status.At).Seconds())
+		if age > health.LastProgressAgeSec {
+			health.LastProgressAgeSec = age
+			health.Phase = status.Phase
+		}
+	}
+	if health.LastProgressAgeSec > 180 {
+		health.Phase = "stalled"
+	}
+	filter := bson.M{"entity": "status", "status.phase": "reconnecting", "at": bson.M{"$gte": now.Add(-time.Hour)}}
+	health.Reconnects1h, err = s.db.Collection("mail_changelog").CountDocuments(ctx, filter)
+	return health, err
 }
 func (s *Service) metadata(ctx context.Context, owner, account string, filter bson.M, limit int64) ([]Metadata, error) {
 	filter["owner"] = owner
