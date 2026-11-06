@@ -99,5 +99,5 @@ func (s *Service) pollAll(owner string, last, now time.Time) bool {
 	state := s.owner(owner)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return state.viewers > 0 || now.Sub(state.active) < 2*time.Minute || now.Sub(last) >= time.Minute
+	return state.viewers > 0 || now.Sub(state.active) < 2*time.Minute || now.Sub(last) >= 30*time.Second
 }
