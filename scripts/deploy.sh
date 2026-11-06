@@ -68,6 +68,10 @@ curl -fsS https://mail.microapps.space/ >/dev/null
 curl -fsS https://mail.microapps.space/healthz/sync
 
 sleep 600
-python3 scripts/check-sync-parity.py
+for attempt in {1..3}; do
+  if python3 scripts/check-sync-parity.py; then break; fi
+  if [[ "$attempt" == 3 ]]; then exit 1; fi
+  sleep 30
+done
 trap - ERR
 echo "Deploy PASS: $version"

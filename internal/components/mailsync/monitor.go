@@ -278,7 +278,7 @@ func (s *Service) monitorConnected(m *monitor, wire syncTransport) error {
 	} else {
 		slog.Warn("read mail storage quota", "error", quotaErr)
 	}
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	var events <-chan imap.SyncEvent
 	if transport, ok := wire.(interface{ Events() <-chan imap.SyncEvent }); ok {
