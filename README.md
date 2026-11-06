@@ -40,6 +40,7 @@ The production service runs on `oracle-vm` using [smdctl.yml](smdctl.yml), behin
 smdctl run -f smdctl.yml
 smdctl status mail
 curl https://mail.microapps.space/healthz
+curl https://mail.microapps.space/healthz/sync
 ```
 
 Docker builds the React assets and hosted Go binary. Publish port 4290 and supply the same `MAIL_*` variables. Health is available at `/healthz`; MongoDB is checked at startup.

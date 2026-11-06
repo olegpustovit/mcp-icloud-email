@@ -35,12 +35,12 @@ func TestConcurrentArrivalIsNotAttributedToAgentAndSentAttributionPersists(t *te
 func TestPollingRetainsIdleInboxAndSlowsInactiveFolders(t *testing.T) {
 	s := &Service{owners: map[string]*ownerState{}}
 	now := time.Now()
-	last := now.Add(-time.Minute)
+	last := now.Add(-30 * time.Second)
 	if s.pollAll("owner", last, now) {
 		t.Fatal("inactive mailbox uses active cadence")
 	}
-	if !s.pollAll("owner", now.Add(-10*time.Minute), now) {
-		t.Fatal("inactive mailbox never polled")
+	if !s.pollAll("owner", now.Add(-time.Minute-time.Second), now) {
+		t.Fatal("inactive mailbox was not polled each minute")
 	}
 	done := s.Watch("owner")
 	if !s.pollAll("owner", last, now) {
