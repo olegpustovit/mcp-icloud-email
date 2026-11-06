@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net"
 	"net/textproto"
@@ -60,6 +61,16 @@ func (e SyncEvent) Numbers() ([]uint32, bool) {
 }
 
 func syncCommand[T any](c *SyncClient, name string, timeout time.Duration, run func() (T, error)) (T, error) {
+	started := time.Now()
+	logSlow := func(err error) {
+		if elapsed := time.Since(started); elapsed >= 5*time.Second {
+			folder := ""
+			if c.selectedTo != nil {
+				folder, _ = c.selectedTo.Load().(string)
+			}
+			slog.Warn("slow IMAP sync command", "command", name, "folder", folder, "duration_ms", elapsed.Milliseconds(), "error", err)
+		}
+	}
 	type result struct {
 		value T
 		err   error
@@ -73,11 +84,14 @@ func syncCommand[T any](c *SyncClient, name string, timeout time.Duration, run f
 	select {
 	case result := <-done:
 		timer.Stop()
+		logSlow(result.err)
 		return result.value, result.err
 	case <-timer.C:
 		_ = c.wire.Close()
 		var zero T
-		return zero, fmt.Errorf("IMAP %s timed out after %s", name, timeout)
+		err := fmt.Errorf("IMAP %s timed out after %s", name, timeout)
+		logSlow(err)
+		return zero, err
 	}
 }
 
