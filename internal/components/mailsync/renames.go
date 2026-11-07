@@ -87,13 +87,17 @@ func (m *Mailbox) RenameFolder(ctx context.Context, from, to string) error {
 			}
 			op = folderOperation{ID: id, Owner: m.owner, Account: m.account, Actor: m.actor, Transaction: transaction, FolderRename: FolderRename{From: from, To: to, Delimiter: source.Delimiter}, Validity: validity, State: "pending", NextAttempt: time.Now(), Created: time.Now()}
 			op.Generations = map[string]uint32{from: validity}
-			for _, folder := range folders {
-				if folder.Name != from && op.path(folder.Name) != folder.Name {
-					generation, generationErr := c.Mail.UIDValidity(ctx, folder.Name)
+			names, err := c.Mail.ListFolders(ctx)
+			if err != nil {
+				return err
+			}
+			for _, name := range names {
+				if name != from && op.path(name) != name {
+					generation, generationErr := c.Mail.UIDValidity(ctx, name)
 					if generationErr != nil {
 						return generationErr
 					}
-					op.Generations[folder.Name] = generation
+					op.Generations[name] = generation
 				}
 			}
 			if _, err = m.s.db.Collection("mail_folder_ops").InsertOne(ctx, op); err != nil {

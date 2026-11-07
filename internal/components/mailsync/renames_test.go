@@ -43,6 +43,13 @@ func TestRenameLostResponseRestartAndReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err = s.Refresh(ctx, "owner", "web", ""); err != nil {
+		t.Fatal(err)
+	}
+	// A partial mirror must not omit a live child's mailbox generation from recovery.
+	if _, err = s.db.Collection("mail_folders").DeleteOne(ctx, bson.M{"owner": "owner", "info.name": "Clients/Child"}); err != nil {
+		t.Fatal(err)
+	}
 	f.mu.Lock()
 	f.lostRenameResponse = true
 	f.mu.Unlock()
