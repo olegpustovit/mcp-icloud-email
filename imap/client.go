@@ -531,32 +531,17 @@ func (c *Client) MoveEmail(ctx context.Context, fromFolder, toFolder, emailID st
 // moveEmail is the internal implementation (caller must hold c.mu)
 func (c *Client) moveEmail(fromFolder, toFolder, emailID string) error {
 	// Select the source mailbox
-	if _, err := c.client.Select(fromFolder, false); err != nil {
+	box, err := c.client.Select(fromFolder, false)
+	if err != nil {
 		return fmt.Errorf("failed to select folder %s: %w", fromFolder, err)
 	}
 
-	// Parse UID
-	uid, err := parseUID(emailID)
+	marker := "$TerminalMail_" + uuid.NewString()
+	location, err := c.relocate(Location{Folder: fromFolder, ID: emailID, Validity: box.UidValidity}, toFolder, marker)
 	if err != nil {
-		return err
-	}
-
-	// Create sequence set
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uid)
-
-	moveSupported, err := c.client.Support("MOVE")
-	if err != nil {
-		return fmt.Errorf("failed to check MOVE support: %w", err)
-	}
-	if !moveSupported {
-		return fmt.Errorf("server does not support safe MOVE; refusing copy/delete fallback")
-	}
-	if err := c.client.UidMove(seqSet, toFolder); err != nil {
 		return fmt.Errorf("failed to move email: %w", err)
 	}
-
-	return nil
+	return c.clearMoveMarker(location, marker)
 }
 
 // DeleteEmail deletes an email (moves to trash or permanently deletes)

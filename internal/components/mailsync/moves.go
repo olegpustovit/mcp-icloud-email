@@ -83,7 +83,7 @@ func (s *Service) move(ctx context.Context, owner, account, actor, transaction s
 			}
 		}
 		now := time.Now().UTC()
-		job := Move{ID: identity(owner, account, transaction), Owner: owner, Account: account, Actor: actor, Transaction: transaction, Kind: kind, From: from, Target: target, Marker: "$TerminalMail_" + auth.Random(), Until: until, State: "moving", NextAttempt: &now, Created: now}
+		job := Move{ID: identity(owner, account, transaction), Owner: owner, Account: account, Actor: actor, Transaction: transaction, Kind: kind, From: from, Target: target, Marker: strings.ToLower("$TerminalMail_" + auth.Random()), Until: until, State: "moving", NextAttempt: &now, Created: now}
 		_, err = s.db.Collection("mail_moves").UpdateOne(ctx, bson.M{"_id": job.ID, "owner": owner, "account": account}, bson.M{"$setOnInsert": job}, options.UpdateOne().SetUpsert(true))
 		if err != nil && !mongo.IsDuplicateKeyError(err) {
 			return fmt.Errorf("record relocation: %w", err)
@@ -308,7 +308,7 @@ func (s *Service) decorateMoves(ctx context.Context, owner, account string, mail
 		box := mailbox{message.Folder, message.UIDValidity}
 		uids[box] = append(uids[box], message.ID)
 		for _, flag := range message.Flags {
-			if strings.HasPrefix(flag, "$TerminalMail_") {
+			if strings.HasPrefix(strings.ToLower(flag), "$terminalmail_") {
 				markers[flag] = true
 			}
 		}

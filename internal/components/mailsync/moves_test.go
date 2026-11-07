@@ -276,6 +276,9 @@ func TestSnoozeRestartRecoveryMoveUndoAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := readMove(t, s, owner, "snooze-one")
+	if job.Marker != strings.ToLower(job.Marker) {
+		t.Fatal("move marker does not match canonical IMAP flags", job.Marker)
+	}
 	if job.State != "snoozed" || job.Current.Folder != "Snoozed" {
 		t.Fatalf("not snoozed: %+v", job)
 	}
