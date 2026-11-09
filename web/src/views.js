@@ -88,11 +88,12 @@ export function paintSelection(root,s) {
   return true
 }
 export function emailDocument(html, dark=false,font='sans',fonts={},original=false) {
+  // The reader owns vertical scrolling; inner scrollbars change wrapping during frame sizing.
   const csp=`<meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; form-action 'none'; base-uri 'none'">`
   // Original mode keeps the sender's own look: no theme colors or reader font, on the white page senders design for.
-  if(original)return `<!doctype html><html><head>${csp}<style>:root{color-scheme:light}body{display:flow-root;margin:8px;background:#fff;color:#000}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`
+  if(original)return `<!doctype html><html><head>${csp}<style>:root{color-scheme:light;overflow-y:hidden}body{display:flow-root;margin:8px;background:#fff;color:#000}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`
   const name=font==='mono'?'IBM Plex Mono':'IBM Plex Sans',data=fonts[font==='mono'?'mono':'sans']
-  return `<!doctype html><html><head>${csp}<style>${data?`@font-face{font-family:'${name}';src:url('${data}') format('truetype')}`:''}:root{color-scheme:${dark?'dark':'light'}}body{display:flow-root;margin:0;font:15px/1.75 '${name}',${font==='mono'?'monospace':'sans-serif'};overflow-wrap:anywhere;color:${dark?'#E6E6E0':'#141413'};background:transparent}img{max-width:100%}a{color:inherit}pre{white-space:pre-wrap}table{max-width:100%}</style></head><body>${html}</body></html>`
+  return `<!doctype html><html><head>${csp}<style>${data?`@font-face{font-family:'${name}';src:url('${data}') format('truetype')}`:''}:root{color-scheme:${dark?'dark':'light'};overflow-y:hidden}body{display:flow-root;margin:0;font:15px/1.75 '${name}',${font==='mono'?'monospace':'sans-serif'};overflow-wrap:anywhere;color:${dark?'#E6E6E0':'#141413'};background:transparent}img{max-width:100%}a{color:inherit}pre{white-space:pre-wrap}table{max-width:100%}</style></head><body>${html}</body></html>`
 }
 function reader(s) {
   const m=current(s)

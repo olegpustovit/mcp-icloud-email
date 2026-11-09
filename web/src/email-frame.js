@@ -7,7 +7,8 @@ export function sizeEmailFrame(frame){
   const resize=()=>{
     if(!frame.isConnected){observer.disconnect();return}
     const style=getComputedStyle(doc.body)
-    frame.style.height=Math.ceil(Math.max(doc.body.scrollHeight,doc.body.getBoundingClientRect().height)+parseFloat(style.marginTop)+parseFloat(style.marginBottom))+'px'
+    const height=Math.ceil(Math.max(doc.body.scrollHeight,doc.body.getBoundingClientRect().height)+parseFloat(style.marginTop)+parseFloat(style.marginBottom)+frame.clientHeight-doc.documentElement.clientHeight)+'px'
+    if(frame.style.height!==height)frame.style.height=height
   }
   const observer=new ResizeObserver(resize)
   frame.contentWindow.addEventListener('pagehide',()=>observer.disconnect(),{once:true})
