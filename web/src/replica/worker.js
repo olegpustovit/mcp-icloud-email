@@ -30,7 +30,10 @@ function indexMessage(raw){
 function deleteMessage(key){const row=indexed.get(key);if(row)for(const word of row.words){const set=words.get(word);set?.delete(key);if(!set?.size)words.delete(word)};indexed.delete(key);metadata.delete(key)}
 // Throttle, not debounce: history backfill announces per page, and every mirror makes each tab requery and redraw.
 function announce(){announceTimer??=setTimeout(()=>{announceTimer=null;const update={type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs};broadcast(update);if(syncLockHeld)mirrorChannel?.postMessage({type:'refresh'})},400)}
-mirrorChannel?.addEventListener('message',()=>{if(db)localWrite(async()=>{await hydrate();broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs})}).catch(err=>broadcast({type:'storage-error',error:err.message}))})
+mirrorChannel?.addEventListener('message',({data})=>{
+ if(data.type==='retry'){if(data.owner===owner&&data.account===account&&syncLockHeld)retrySync();return}
+ if(db)localWrite(async()=>{await hydrate();broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs})}).catch(err=>broadcast({type:'storage-error',error:err.message}))
+})
 async function queueStatus(){const txs=await all('transactions');broadcast({type:'queue',pending:txs.filter(tx=>['pending','awaiting-sync'].includes(tx.status)).length,rejected:txs.filter(tx=>tx.status==='rejected')})}
 async function drain(){if(draining||!db)return;draining=true;let progressed=0;try{progressed=await drainQueue(db,{owner,account},broadcast)}catch(err){broadcast({type:'storage-error',error:err.message})}finally{draining=false}if(progressed&&(await all('transactions')).some(tx=>tx.status==='pending'))setTimeout(drain,0)}
 function localWrite(run){const pending=localWrites.then(run);localWrites=pending.catch(()=>{});return pending}
@@ -144,6 +147,7 @@ async function synchronize(){
           if(event.event==='auth_required'||event.event==='account_changed'){broadcast({type:'auth-required'});streamController.abort();return}
           if(event.event==='change')await persistChanges([JSON.parse(event.data)])
         })
+        if(!signal.aborted)broadcast({type:'sync-disconnected'})
       }catch(err){if(signal.aborted)return;broadcast({type:'sync-disconnected',error:err.message})}
       if(signal.aborted)return
       await new Promise(resolve=>{const timer=setTimeout(resolve,syncRetryDelay(backoff));signal.addEventListener('abort',()=>{clearTimeout(timer);resolve()},{once:true})})
@@ -153,9 +157,14 @@ async function synchronize(){
     if(navigator.locks?.request){
       try{await navigator.locks.request('terminal-mail-sync',{mode:'exclusive',signal},async()=>{syncLockHeld=true;try{await loop()}finally{syncLockHeld=false}})}
       catch(err){if(!signal.aborted)throw err}
-    }else await loop()
+    }else{syncLockHeld=true;try{await loop()}finally{syncLockHeld=false}}
   })().finally(()=>{syncTask=null})
   return syncTask
+}
+async function retrySync(){
+ drain()
+ if(syncLockHeld){streamController?.abort();await syncTask}
+ if(!syncTask)synchronize()
 }
 async function backfillHistory(signal){
  if(historyTask)return historyTask
@@ -299,7 +308,7 @@ async function handle(op,args,port){
     const records=(op==='queue'?[args]:args.transactions).map(input=>{const id=input.id||crypto.randomUUID(),tx={...input,id,status:'pending'};if(tx.kind==='mutation')tx.body={...tx.body,transactionId:id};return tx})
     await enqueueBatch(db,records,op==='queue-batch'?args.undoStack:undefined);await queueStatus();drain();return op==='queue'?records[0].id:records.map(tx=>tx.id)
   }
-  if(op==='retry'){drain();if(!syncTask)synchronize();return true}
+  if(op==='retry'){mirrorChannel?.postMessage({type:'retry',owner,account});await retrySync();return true}
   if(op==='refresh'){streamController?.abort();await syncTask;await historyTask?.catch(()=>{});await remove('settings','bootstrapped');synchronize();return true}
   if(op==='discard-rejected'){await remove('transactions',args.id);await queueStatus();return true}
   if(op==='clear'){

@@ -191,7 +191,7 @@ async function loadNotifications(renew=false){
   const data=await request('/api/mail/push');if(s.account!==account)return;s.push=data
   const current=JSON.parse(localStorage.getItem('mail.pushDevice')||'null');s.pushID=current?.owner===account.email&&current?.account===account.icloud_email?current.id:null
   s.notifyEnabled=!!data.devices.find(device=>device.id===s.pushID)
-  if(renew&&s.notifyEnabled&&s.pushSupported&&Notification.permission==='granted'){const registration=await navigator.serviceWorker.getRegistration(),subscription=await registration?.pushManager.getSubscription();if(subscription&&s.account===account)await registerPush(subscription)}
+  if(renew&&s.pushID&&s.pushSupported&&Notification.permission==='granted'){const registration=await navigator.serviceWorker.ready,subscription=await registration.pushManager.getSubscription();if(subscription&&s.account===account){const device=await registerPush(subscription);s.push.devices=[...data.devices.filter(candidate=>candidate.id!==device.id),device]}}
   draw()
  }catch(err){s.pushError=errorText(err);draw()}
 }
@@ -202,7 +202,7 @@ async function registerPush(subscription){
 async function enablePush(){
  if(!s.pushSupported||!s.push?.publicKey)return
  const permission=await Notification.requestPermission();if(permission!=='granted'){say('Notifications are blocked. Allow them in your browser settings.',true);return}
- try{const registration=await navigator.serviceWorker.ready,encoded=s.push.publicKey.replace(/-/g,'+').replace(/_/g,'/'),key=Uint8Array.from(atob(encoded),char=>char.charCodeAt(0));const subscription=await registration.pushManager.getSubscription()||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});await registerPush(subscription);s.pushError='';await loadNotifications();say('NOTIFICATIONS ENABLED')}catch(err){say('Notifications could not be enabled. '+errorText(err),true)}
+ try{const registration=await navigator.serviceWorker.ready,encoded=s.push.publicKey.replace(/-/g,'+').replace(/_/g,'/'),key=Uint8Array.from(atob(encoded),char=>char.charCodeAt(0));const subscription=await registration.pushManager.getSubscription()||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});await registerPush(subscription);if(s.prefs.notifications==='none'&&!await savePreference('notifications','all'))return;s.pushError='';await loadNotifications();say('NOTIFICATIONS ENABLED')}catch(err){say('Notifications could not be enabled. '+errorText(err),true)}
 }
 async function disablePush(id){
  try{await request('/api/mail/push/'+encodeURIComponent(id),{method:'DELETE',body:'{}'});if(id===s.pushID){s.notifyEnabled=false;localStorage.removeItem('mail.pushDevice');const registration=await navigator.serviceWorker?.getRegistration(),subscription=await registration?.pushManager.getSubscription();await subscription?.unsubscribe()}await loadNotifications();say('DEVICE NOTIFICATIONS DISABLED')}catch(err){say(errorText(err),true)}

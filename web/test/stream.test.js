@@ -9,3 +9,16 @@ test('SSE parser resumes IDs and handles CRLF, comments, Unicode split across ch
   const events=[];await readEvents(stream,event=>events.push(event))
   assert.deepEqual(events,[{event:'change',id:'7',data:'{"subject":"Привіт"}'},{event:'reset',id:'7',data:'first\nsecond'}])
 })
+
+test('a silent stream times out and cancels its reader so sync can reconnect',async()=>{
+  let cancelled=false
+  const stream=new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(': connected\n\n'))},cancel(){cancelled=true}})
+  await assert.rejects(readEvents(stream,()=>{},20),/heartbeat timed out/)
+  assert.equal(cancelled,true)
+  assert.equal(stream.locked,false)
+})
+
+test('heartbeat comments keep an otherwise idle stream alive',async()=>{
+  const stream=new ReadableStream({async start(controller){for(let i=0;i<5;i++){controller.enqueue(new TextEncoder().encode(': heartbeat\n\n'));await new Promise(resolve=>setTimeout(resolve,10))}controller.close()}})
+  await readEvents(stream,()=>assert.fail('comments must not become events'),40)
+})
