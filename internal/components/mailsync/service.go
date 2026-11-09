@@ -167,7 +167,7 @@ func (s *Service) AcquireBulk(ctx context.Context, owner string) (*Connection, f
 }
 
 func (s *Service) acquireForActor(ctx context.Context, owner, actor string) (*Connection, func(), error) {
-	if strings.HasPrefix(actor, "mcp:") {
+	if strings.HasPrefix(actor, "mcp:") || strings.HasPrefix(actor, "prefetch:") {
 		return s.AcquireBulk(ctx, owner)
 	}
 	return s.Acquire(ctx, owner)

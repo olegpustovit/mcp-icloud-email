@@ -1,39 +1,41 @@
 {
   "messages": 50000,
-  "firstWindowMS": 122.10000000149012,
-  "hydrateMS": 969.6999999992549,
+  "firstWindowMS": 46,
+  "hydrateMS": 785.8999999761581,
   "queries": [
     {
       "search": "",
-      "ms": 163.19999999925494,
+      "ms": 69.79999995231628,
       "total": 5000
     },
     {
       "search": "needle",
-      "ms": 100,
+      "ms": 58.200000047683716,
       "total": 5556,
-      "workerMS": 97
+      "workerMS": 56
     },
     {
       "search": "from:sender7",
-      "ms": 76,
+      "ms": 64.20000004768372,
       "total": 3000,
-      "workerMS": 74
+      "workerMS": 63
     },
     {
       "search": "subject:\"Build report\"",
-      "ms": 165.79999999701977,
+      "ms": 120,
       "total": 25000,
-      "workerMS": 158
+      "workerMS": 119
     },
     {
       "search": "needle",
-      "ms": 84,
+      "ms": 47.10000002384186,
       "total": 5556,
-      "workerMS": 82
+      "workerMS": 46
     }
   ],
-  "keyPaintP95MS": 12.899999998509884,
-  "cachedBodyMS": 5.199999999254942,
-  "mountedRows": 25
+  "keyPaintP95MS": 6.799999952316284,
+  "cachedBodyMS": 5.100000023841858,
+  "prefetchedBodyMS": 1.899999976158142,
+  "syncMS": 116.40000009536743,
+  "mountedRows": 33
 }

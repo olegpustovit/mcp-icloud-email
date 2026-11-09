@@ -47,9 +47,11 @@ Docker builds the React assets and hosted Go binary. Publish port 4290 and suppl
 
 ## Mail synchronization and offline storage
 
-The server keeps an owner/account-scoped metadata mirror in MongoDB. One IMAP connection follows Inbox changes with IDLE and another serializes commands and body reads. Other folders are checked every 30 seconds while a browser stream or recent MCP call is active, and every ten minutes otherwise. Servers without IDLE use polling. Folder UIDVALIDITY changes reset that folder's replica.
+The server keeps an owner/account-scoped metadata mirror in MongoDB. One IMAP connection follows Inbox changes with IDLE; separate command connections handle browser actions and background/MCP work so prefetching does not delay opening mail. Other folders are checked every 30 seconds while a browser stream or recent MCP call is active, and every ten minutes otherwise. Servers without IDLE use polling. Folder UIDVALIDITY changes reset that folder's replica.
 
 Browsers share a worker and an IndexedDB replica, with a dedicated-worker fallback. Downloaded bodies use a 200 MB LRU cache on the device. Queued changes survive reloads and are removed only after the server journal confirms them. Signing out or unlinking clears the device replica. Privacy settings can clear downloaded bodies separately. Metadata and its journal are readable to database administrators; scheduled message payloads and push subscription secrets are encrypted with the service encryption key.
+
+The browser warms up to 30 nearby conversations, prioritizing hovered and adjacent messages and fetching the newest message in each thread. Data Saver disables speculative downloads, and messages over 8 MiB are opened on demand. Exact-identity server-cached bodies are served without waiting for iCloud; uncached bodies still require network access. Body downloads survive sync-stream reconnects and are cancelled when their cache or account is cleared.
 
 Email and attachment reads reject MIME messages over 20 MiB. New messages support up to 30 attachments totaling 10 MiB. Remote images stay blocked until consent or an allowed-sender preference; the proxy validates public destinations and raster content. Embedded CID images are resolved locally. PDF previews render pages without running document scripts or forms. Mailbox content is sanitized and shown in a scriptless iframe.
 

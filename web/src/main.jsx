@@ -13,8 +13,10 @@ import { W, prog, esc } from './design.js'
 import { openReplica } from './replica/client.js'
 import {safeRichHTML} from './rich-text.js'
 import {morph} from './morph.js'
+import {sizeEmailFrame} from './email-frame.js'
 
 const root=document.getElementById('root')
+root.addEventListener('load',event=>{if(event.target.matches?.('.email-frame'))sizeEmailFrame(event.target)},true)
 const params=new URLSearchParams(location.search)
 const s={account:null,mode:params.has('reset_token')?'reset':'login',authEmail:'',authPassword:'',icloudEmail:'',busy:false,error:'',notice:params.get('verified')==='1'?'Email verified. Sign in to continue.':params.get('error')==='verification'?'That verification link is invalid or expired. Register again for a fresh link.':'',view:'mail',tab:'account',folder:'inbox',folders:[],msgs:[],total:0,counts:{},prefs:{},bodies:{},cur:0,picked:[],filter:'all',search:'',q:'',focus:'list',overlay:null,pal:'',palI:0,pickI:0,pickQuery:'',chord:null,compose:null,draft:null,draftStatus:'',loading:false,sending:false,bodyError:'',pending:0,offline:!navigator.onLine,...loadWins(),desktop:matchMedia('(min-width:761px)').matches,mobilePane:'list',signal:localStorage.getItem('mail.signal')==='true',theme:localStorage.getItem('mail.theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
 let replica=null,replicaAccount=''
@@ -131,6 +133,7 @@ async function onReplicaEvent(event){
   if(event.type==='cleared'){s.msgs=[];s.bodies={};s.draft=null;draw()}
 }
 async function initReplica(){
+ readerFonts().then(fonts=>{s.readerFonts=fonts;draw()}).catch(()=>{})
  const binding=s.account.email+':'+s.account.icloud_email
  if(replicaAccount&&replicaAccount!==binding){bodyRevision++;folderGeneration++;bodyRequests.clear();clearTimeout(draftTimer);s.draft=null;s.compose=null;s.overlay=null;s.outbox=[];s.search='';s.q='';s.bodies={};s.msgs=[];s.folders=[];s.folderInfo=[];s.picked=[];undoStack=[];s.enteredInbox=false}
  replicaAccount=binding;replica?.close();const client=openReplica(s.account,event=>{if(replica===client)onReplicaEvent(event).catch(err=>{if(replica===client)say(errorText(err),true)})});replica=client
@@ -235,8 +238,6 @@ async function loadFolder(folder,more=false,quiet=false) {
   if(s.msgs.length)s.enteredInbox=s.enteredInbox||s.sync?.phase!=='importing'
   await client.call('put',{store:'snapshots',key:folder,value:{msgs:s.msgs,total:s.total}})
   draw();loadBody()
-  const latest=current(s)?.threadMessages?.at(-1);if(latest)loadBody(false,message(latest,latest.folder))
-  client.call('prefetch',{keys:visible(s).slice(Math.max(0,s.cur-2),s.cur+4).map(m=>m.id)}).catch(()=>{})
   }catch(err){if(client===replica){s.error=errorText(err);s.loading=false;draw()}}
 }
 function searchMail(text){
@@ -244,12 +245,22 @@ function searchMail(text){
  if(text)searchTimer=setTimeout(async()=>{try{await replica.call('search-bodies',{search:text});if(s.search===text){await loadFolder(s.folder,false,true);if(navigator.onLine)await replica.call('remote-search',{search:text})}}catch(err){if(s.search===text)say('Search could not read cached bodies. '+errorText(err),true)}},150)
 }
 async function loadBody(force=false,target=current(s)) {
+  warmNearby(target)
   const latest=target?.threadMessages?.at(-1),m=latest?message(latest,latest.folder):target;if(!m||m.pendingLocation||target?.pendingLocation||bodyRequests.has(m.id)||s.bodies[m.id]&&!force)return
   const client=replica,version=bodyRevision,token={};bodyRequests.set(m.id,token);s.bodyError=''
-  try{if(force)await client.call('remove',{store:'bodies',key:m.id});const body=await client.call('body',{key:m.id,folder:m.folder,id:m.uid,validity:m.uidValidity});if(body.bodyHTML&&!s.readerFonts)s.readerFonts=await readerFonts();if(client!==replica||version!==bodyRevision||!s.account?.connected)return;s.bodies[m.id]=body;prepareBodyHTML(body);loadRemoteAutomatically();if(current(s)?.id===m.id||current(s)?.threadId===m.threadId)draw()}
+  try{if(force)await client.call('remove',{store:'bodies',key:m.id});const body=await client.call('body',{key:m.id,folder:m.folder,id:m.uid,validity:m.uidValidity});if(client!==replica||version!==bodyRevision||!s.account?.connected)return;s.bodies[m.id]=body;prepareBodyHTML(body);loadRemoteAutomatically();if(current(s)?.id===m.id||current(s)?.threadId===m.threadId)draw()}
   catch(err){if(client===replica&&version===bodyRevision&&current(s)?.id===m.id){s.bodyError=s.offline?'This message body has not been cached on this device.':errorText(err);draw()}}
   finally{if(bodyRequests.get(m.id)===token)bodyRequests.delete(m.id)}
 }
+function warmNearby(target){
+ const rows=visible(s),index=rows.findIndex(row=>row.id===target?.id)
+ const nearby=[target,...rows.slice(index+1,index+4),...rows.slice(Math.max(0,index-2),index)].filter(Boolean)
+ const messages=nearby.filter(row=>!row.pendingLocation).map(row=>row.threadMessages?.at(-1)||{folder:row.folder,uidValidity:row.uidValidity,id:row.uid})
+ replica?.call('prefetch',{messages}).catch(()=>{})
+}
+root.addEventListener('pointerover',event=>{
+ const row=event.target.closest('.row');if(row&&!row.contains(event.relatedTarget))warmNearby(visible(s)[Number(row.dataset.i)])
+})
 async function markOpenedRead(){
  const m=current(s)
  if((s.desktop||s.mobilePane==='reader')&&!s.picked.length&&m?.un&&m.f!=='drafts')await mutate('read',{read:true})

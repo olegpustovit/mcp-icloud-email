@@ -99,6 +99,9 @@ func protect(authenticate func(*http.Request) (string, error), baseURL string, n
 		if cookie, e := r.Cookie("__Host-mail_session"); e == nil {
 			actor += ":" + auth.Hash(cookie.Value)[:12]
 		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/mail/message" && r.URL.Query().Get("prefetch") == "1" {
+			actor = "prefetch:" + actor
+		}
 		return email, actor, err
 	}, baseURL, next)
 }

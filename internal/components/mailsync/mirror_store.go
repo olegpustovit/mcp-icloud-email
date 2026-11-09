@@ -299,7 +299,17 @@ func (s *Service) applyChanges(ctx context.Context, changes []Change) error {
 			if change.Message == nil || change.Message.Owner != change.Owner || change.Message.Account != change.Account {
 				return errors.New("invalid mail message journal scope")
 			}
-			value = change.Message
+			// Flags and other metadata change; a body at the same UIDVALIDITY/UID does not.
+			cached := bson.M{"body_cached": true, "email": bson.M{"$mergeObjects": bson.A{
+				bson.M{"$literal": change.Message.Email},
+				bson.M{"bodyplain": "$email.bodyplain", "bodyhtml": "$email.bodyhtml", "inlineimages": "$email.inlineimages"},
+			}}}
+			update := mongo.Pipeline{{{Key: "$replaceWith", Value: bson.M{"$mergeObjects": bson.A{
+				bson.M{"$literal": change.Message},
+				bson.M{"$cond": bson.A{bson.M{"$eq": bson.A{"$body_cached", true}}, cached, bson.M{}}},
+			}}}}}
+			models = append(models, mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(update).SetUpsert(true))
+			continue
 		case "folder":
 			if change.Folder == nil || change.Folder.Owner != change.Owner || change.Folder.Account != change.Account {
 				return errors.New("invalid folder journal scope")

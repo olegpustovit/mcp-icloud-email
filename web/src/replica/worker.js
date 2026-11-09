@@ -3,6 +3,7 @@ import {lines,readEvents} from './stream.js'
 import {address,matches,role,conversations,rebase,searchTokens} from '../model.js'
 import {cacheBody} from './body-cache.js'
 import {syncRetryDelay} from './retry-delay.js'
+import {bodyKey as rawKey,prefetchMessages} from './body-prefetch.js'
 let db,owner='',account='',draining=false,historyTask,streamController,syncTask,announceTimer,cursor=0,localWrites=Promise.resolve()
 let status={phase:'connecting',ready:false,imported:0,total:0},prefs={vip:[]}
 const ports=new Set(),metadata=new Map(),folders=new Map(),indexed=new Map(),words=new Map(),bodyRequests=new Map(),tombstones=new Map()
@@ -16,7 +17,6 @@ const all=store=>storageAll(db,store)
 const write=(store,key,value)=>storageWrite(db,store,key,value)
 const remove=(store,key)=>storageRemove(db,store,key)
 const headers=()=>({'X-Mail-Owner':owner,'X-Mail-Account':account})
-const rawKey=m=>`${m.folder}|${m.uidValidity}|${m.id}`
 const tokenWords=text=>text.toLowerCase().match(/[\p{L}\p{N}@._-]+/gu)||[]
 function searchRow(raw){const who=raw.from?.replace(/\s*<[^>]+>/,'')||'';return {...raw,who,em:address(raw.from),subj:raw.subject||'',snip:raw.snippet||'',f:role(raw.folder),un:raw.unread,fl:raw.flagColor,att:raw.attachments?.length||(raw.hasAttachments?1:0)}}
 function indexMessage(raw){
@@ -29,7 +29,7 @@ function indexMessage(raw){
 }
 function deleteMessage(key){const row=indexed.get(key);if(row)for(const word of row.words){const set=words.get(word);set?.delete(key);if(!set?.size)words.delete(word)};indexed.delete(key);metadata.delete(key)}
 // Throttle, not debounce: history backfill announces per page, and every mirror makes each tab requery and redraw.
-function announce(){announceTimer??=setTimeout(()=>{announceTimer=null;const update={type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs};broadcast(update);if(syncLockHeld)mirrorChannel?.postMessage({type:'refresh'})},400)}
+function announce(){announceTimer??=setTimeout(()=>{announceTimer=null;const update={type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs};broadcast(update);if(syncLockHeld)mirrorChannel?.postMessage({type:'refresh'})},100)}
 mirrorChannel?.addEventListener('message',({data})=>{
  if(data.type==='retry'){if(data.owner===owner&&data.account===account&&syncLockHeld)retrySync();return}
  if(db)localWrite(async()=>{await hydrate();broadcast({type:'mirror',syncId:cursor,status,folders:[...folders.values()],prefs})}).catch(err=>broadcast({type:'storage-error',error:err.message}))
@@ -96,7 +96,7 @@ async function persist(changes){
   for(const rename of renames)broadcast({type:'folder-remapped',...rename})
   for(const change of agents)broadcast({type:'agent-change',change})
   for(const message of arrivals)broadcast({type:'mail-arrival',message})
-  await queueStatus();announce()
+  if(changes.some(change=>change.entity==='tx'))await queueStatus();announce()
 }
 async function bootstrap(signal){
   const response=await fetch('/api/mail/sync/bootstrap',{credentials:'same-origin',headers:headers(),signal})
@@ -209,7 +209,7 @@ async function query(args){
   const folder=[...folders.values()].find(f=>f.name===physical)
   const unfiltered=!text&&(!args.filter||args.filter==='all')&&!smart
   const total=unfiltered&&folder?folder.total:result.length
-  prefetchQueue=result.filter(row=>!row.pendingLocation).slice(0,30);clearTimeout(prefetchTimer);prefetchTimer=setTimeout(prefetch,1500)
+  queuePrefetch(result.slice(args.offset||0,(args.offset||0)+30))
   return {emails:result.slice(args.offset||0,(args.offset||0)+(args.limit||100)).map(row=>text?{...row,searchQuery:text}:row),search:text?{localMS:Math.round(performance.now()-started),bodyMS:localBody?.ms??null,server:remote?{running:remote.running,ms:remote.ms,error:remote.error}:null}:null,total,loaded:result.length,partial:!!text&&remote?.running||(!smart&&folder?!folder.complete:status.phase==='importing'),folder:physical,unread:folder?.unread||0}
 }
 async function searchBodies(text){
@@ -255,20 +255,26 @@ async function searchRemote(text,port,retry=false){
   }while((next||entry.running)&&!controller.signal.aborted&&entry.ports.size)
  }catch(err){if(!controller.signal.aborted){entry.running=false;entry.ms=Math.round(performance.now()-started);entry.error=err.message;broadcast({type:'search-ready',search:text})}}
 }
+function queuePrefetch(rows){
+  if(navigator.connection?.saveData)return
+  prefetchQueue=prefetchMessages([...rows,...prefetchQueue]);clearTimeout(prefetchTimer);prefetchTimer=setTimeout(prefetch,80)
+}
 async function prefetch(){
-  if(prefetching||!ports.size||!navigator.onLine)return
+  if(prefetching||!ports.size||!navigator.onLine||navigator.connection?.saveData)return
   prefetching=true
-  try{while(prefetchQueue.length&&ports.size&&navigator.onLine){const m=prefetchQueue.shift();await body({key:rawKey(m),folder:m.folder,id:m.id,validity:m.uidValidity});await new Promise(resolve=>setTimeout(resolve,80))}}catch{}finally{prefetching=false}
+  try{while(prefetchQueue.length&&ports.size&&navigator.onLine){const m=prefetchQueue.shift();try{await body({key:rawKey(m),folder:m.folder,id:m.id,validity:m.uidValidity,prefetch:true})}catch{}await new Promise(resolve=>setTimeout(resolve,20))}}finally{prefetching=false}
 }
 async function body(args){
-  const generation=bodyGeneration,cached=await read('bodies',args.key);if(generation!==bodyGeneration)return body(args);if(cached){const usage=await read('bodyUsage',args.key);if(usage)await write('bodyUsage',args.key,{...usage,at:Date.now()});return cached}
+  const generation=bodyGeneration,cached=await read('bodies',args.key);if(generation!==bodyGeneration)throw new Error('Body cache changed; reopen the message.');if(cached){const usage=await read('bodyUsage',args.key);if(usage)await write('bodyUsage',args.key,{...usage,at:Date.now()});return cached}
   if(bodyRequests.get(args.key)?.generation===generation)return bodyRequests.get(args.key)
+  const controller=new AbortController()
   const pending=(async()=>{
-    const response=await fetch('/api/mail/message?'+new URLSearchParams({folder:args.folder,id:args.id,validity:args.validity}),{credentials:'same-origin',headers:headers(),signal:streamController?.signal})
+    const response=await fetch('/api/mail/message?'+new URLSearchParams({folder:args.folder,id:args.id,validity:args.validity,...args.prefetch?{prefetch:'1'}:{}}),{credentials:'same-origin',headers:headers(),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)]),priority:args.prefetch?'low':'high'})
     if(!response.ok){const problem=await response.json().catch(()=>({}));throw new Error(problem.error||'Message body could not be loaded')}
     const value=await response.json();if(generation!==bodyGeneration)throw new Error('Body cache changed; reopen the message.');try{await cacheBody(db,args.key,value);cacheWarning=false}catch(err){if(!cacheWarning)broadcast({type:'storage-error',error:'Message bodies could not be cached. '+err.message});cacheWarning=true}return value
-  })().finally(()=>{if(bodyRequests.get(args.key)===pending)bodyRequests.delete(args.key)});pending.generation=generation;bodyRequests.set(args.key,pending);return pending
+  })().finally(()=>{if(bodyRequests.get(args.key)===pending)bodyRequests.delete(args.key)});pending.generation=generation;pending.controller=controller;bodyRequests.set(args.key,pending);return pending
 }
+function cancelBodies(){bodyGeneration++;clearTimeout(prefetchTimer);prefetchQueue=[];for(const pending of bodyRequests.values())pending.controller.abort();bodyRequests.clear()}
 async function handle(op,args,port){
   if(op==='init'){
     if(db&&(owner!==args.owner||account!==args.account))throw new Error('Replica account mismatch')
@@ -296,8 +302,8 @@ async function handle(op,args,port){
   }
   if(op==='find-message')return [...metadata.values()].find(m=>m.folder===args.folder&&m.id===args.id&&m.uidValidity===args.validity)||null
   if(op==='body')return body(args)
-  if(op==='prefetch'){prefetchQueue=args.keys.map(key=>[...metadata.values()].find(m=>rawKey(m)===key)).filter(Boolean).concat(prefetchQueue);clearTimeout(prefetchTimer);prefetchTimer=setTimeout(prefetch,80);return true}
-  if(op==='clear-bodies'){bodyGeneration++;bodySearches.clear();await localWrite(()=>new Promise((resolve,reject)=>{const tx=db.transaction(['bodies','bodyUsage'],'readwrite');tx.objectStore('bodies').clear();tx.objectStore('bodyUsage').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)}));broadcast({type:'bodies-cleared'});return true}
+  if(op==='prefetch'){queuePrefetch(args.messages);return true}
+  if(op==='clear-bodies'){cancelBodies();bodySearches.clear();await localWrite(()=>new Promise((resolve,reject)=>{const tx=db.transaction(['bodies','bodyUsage'],'readwrite');tx.objectStore('bodies').clear();tx.objectStore('bodyUsage').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)}));broadcast({type:'bodies-cleared'});return true}
   if(op==='remap-folder'){
     await localWrite(()=>new Promise((resolve,reject)=>{const tx=db.transaction(['transactions','drafts','settings'],'readwrite');remapFolder(tx,args);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Folder references could not be updated'))}))
     broadcast({type:'folder-remapped',...args});return true
@@ -312,6 +318,7 @@ async function handle(op,args,port){
   if(op==='refresh'){streamController?.abort();await syncTask;await historyTask?.catch(()=>{});await remove('settings','bootstrapped');synchronize();return true}
   if(op==='discard-rejected'){await remove('transactions',args.id);await queueStatus();return true}
   if(op==='clear'){
+    cancelBodies()
     streamController?.abort();for(const entry of remoteSearches.values())entry.controller.abort();remoteSearches.clear();portQueries.clear();bodySearches.clear();await syncTask
     await Promise.all(stores.map(store=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})))
     metadata.clear();indexed.clear();words.clear();folders.clear();cursor=0;broadcast({type:'cleared'});return true
@@ -319,7 +326,7 @@ async function handle(op,args,port){
   throw new Error('Unknown replica operation')
 }
 function connect(port){ports.add(port);port.onmessage=async({data})=>{
-  if(data.op==='disconnect'){cancelPortSearch(port);ports.delete(port);if(!ports.size)streamController?.abort();port.close?.();return}
+  if(data.op==='disconnect'){cancelPortSearch(port);ports.delete(port);if(!ports.size){cancelBodies();streamController?.abort()}port.close?.();return}
   try{const value=await handle(data.op,data.args,port);port.postMessage({reply:data.id,value})}catch(err){port.postMessage({reply:data.id,error:err.message})}
 };port.start?.()}
 self.onconnect=event=>connect(event.ports[0])

@@ -181,6 +181,20 @@ func (m *Mailbox) CountEmails(ctx context.Context, folder string, filters imap.E
 	count, err := m.s.db.Collection("mail_messages").CountDocuments(ctx, filter)
 	return int(count), err
 }
+
+// CachedEmail reads only the requested immutable mailbox generation; cache misses still need live validation.
+func (m *Mailbox) CachedEmail(ctx context.Context, folder, id string, validity uint32) (*imap.Email, error) {
+	var metadata Metadata
+	err := m.s.db.Collection("mail_messages").FindOne(ctx, bson.M{"_id": messageKey(m.owner, m.account, folder, validity, id), "owner": m.owner, "account": m.account, "body_cached": true}).Decode(&metadata)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &metadata.Email, nil
+}
+
 func (m *Mailbox) GetEmail(ctx context.Context, folder, id string) (*imap.Email, error) {
 	var metadata Metadata
 	metadataErr := m.s.db.Collection("mail_messages").FindOne(ctx, bson.M{"owner": m.owner, "account": m.account, "email.folder": folder, "email.id": id}).Decode(&metadata)

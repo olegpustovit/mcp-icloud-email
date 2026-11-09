@@ -257,18 +257,38 @@ func (h *handler) message(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid_message"})
 		return
 	}
+	validity, err := strconv.ParseUint(q.Get("validity"), 10, 32)
+	if err != nil || validity == 0 {
+		respond(w, 400, map[string]string{"error": "mailbox_identity_required_refresh_mail"})
+		return
+	}
 	d, ok := h.open(w, r)
 	if !ok {
 		return
 	}
 	defer closeMail(d)
-	validity, _ := strconv.ParseUint(q.Get("validity"), 10, 32)
-	if !checkValidity(w, r, d, q.Get("folder"), uint32(validity)) {
-		return
+	var email *imap.Email
+	if cached, ok := d.IMAP.(interface {
+		CachedEmail(context.Context, string, string, uint32) (*imap.Email, error)
+	}); ok {
+		email, err = cached.CachedEmail(r.Context(), q.Get("folder"), q.Get("id"), uint32(validity))
+		if err != nil {
+			failed(w, r, err)
+			return
+		}
 	}
-	email, err := d.IMAP.GetEmail(r.Context(), q.Get("folder"), q.Get("id"))
-	if err != nil {
-		failed(w, r, err)
+	if email == nil {
+		if !checkValidity(w, r, d, q.Get("folder"), uint32(validity)) {
+			return
+		}
+		email, err = d.IMAP.GetEmail(r.Context(), q.Get("folder"), q.Get("id"))
+		if err != nil {
+			failed(w, r, err)
+			return
+		}
+	}
+	if email.UIDValidity != uint32(validity) {
+		respond(w, 409, map[string]string{"error": "mailbox_changed_refresh_before_retrying"})
 		return
 	}
 	copy := *email

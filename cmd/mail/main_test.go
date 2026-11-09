@@ -83,6 +83,24 @@ func TestAuthenticatedMCPIdentityIsolation(t *testing.T) {
 
 type bearerTransport struct{ token string }
 
+func TestOnlyMessagePrefetchUsesBackgroundActor(t *testing.T) {
+	for _, tc := range []struct{ method, path, actor string }{
+		{"GET", "/api/mail/message?prefetch=1", "prefetch:web"},
+		{"GET", "/api/mail/message", "web"},
+		{"POST", "/api/mail/mutate?prefetch=1", "web"},
+	} {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			h := protect(func(*http.Request) (string, error) { return "owner", nil }, "https://mail.microapps.space", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Context().Value(actorKey{}); got != tc.actor {
+					t.Errorf("actor = %v, want %s", got, tc.actor)
+				}
+			}))
+			r := httptest.NewRequest(tc.method, "https://mail.microapps.space"+tc.path, nil)
+			h.ServeHTTP(httptest.NewRecorder(), r)
+		})
+	}
+}
+
 func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Host = "mail.microapps.space"

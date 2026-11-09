@@ -17,7 +17,7 @@ function patchChildren(target,source){
 }
 function patch(live,node){
   if(live.nodeType!==1){if(live.nodeValue!==node.nodeValue)live.nodeValue=node.nodeValue;return}
-  for(const {name} of [...live.attributes])if(!node.hasAttribute(name))live.removeAttribute(name)
+  for(const {name} of [...live.attributes])if(!node.hasAttribute(name)&&!(name==='style'&&live.matches('.email-frame')))live.removeAttribute(name)
   for(const {name,value} of node.attributes)if(live.getAttribute(name)!==value)live.setAttribute(name,value)
   const editing=live===document.activeElement
   if(live.nodeName==='INPUT'){if(!editing){live.checked=node.hasAttribute('checked');if(live.type!=='file')live.value=node.getAttribute('value')??''};return}

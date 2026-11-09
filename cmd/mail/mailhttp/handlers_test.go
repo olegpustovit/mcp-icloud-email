@@ -29,7 +29,64 @@ func (f *mailboxFake) MarkRead(_ context.Context, folder, id string, read bool) 
 	return nil
 }
 func (f *mailboxFake) GetEmail(context.Context, string, string) (*imap.Email, error) {
-	return &imap.Email{ID: "42", BodyHTML: `<script>bad()</script><p onclick="bad()">Safe</p><a href="javascript:bad()">Bad URL</a><img src="https://tracker.example/1">`}, nil
+	return &imap.Email{ID: "42", UIDValidity: 7, BodyHTML: `<script>bad()</script><p onclick="bad()">Safe</p><a href="javascript:bad()">Bad URL</a><img src="https://tracker.example/1">`}, nil
+}
+
+type cachedMailboxFake struct{ mailboxFake }
+
+func (f *cachedMailboxFake) CachedEmail(_ context.Context, folder, id string, validity uint32) (*imap.Email, error) {
+	if folder == "INBOX" && id == "42" && validity == 7 {
+		return &imap.Email{ID: id, UIDValidity: validity, BodyHTML: `<p>Cached</p><script>bad()</script>`}, nil
+	}
+	return nil, nil
+}
+func (*cachedMailboxFake) UIDValidity(context.Context, string) (uint32, error) {
+	return 0, errors.New("IMAP unavailable")
+}
+
+func TestCachedBodyDoesNotWaitForIMAPAndStillRequiresIdentity(t *testing.T) {
+	h := New(func(context.Context) (mailmcp.Dependencies, error) {
+		return mailmcp.Dependencies{IMAP: &cachedMailboxFake{}, FromEmail: "me@icloud.com"}, nil
+	}, "https://mail.microapps.space", nil, func(context.Context) string { return "alice" }, nil)
+	for _, tc := range []struct {
+		account, validity string
+		status            int
+	}{
+		{"me@icloud.com", "7", 200},
+		{"other@icloud.com", "7", 409},
+		{"me@icloud.com", "0", 400},
+		{"me@icloud.com", "4294967296", 400},
+		{"me@icloud.com", "invalid", 400},
+		{"me@icloud.com", "8", 502},
+	} {
+		r := httptest.NewRequest("GET", "/api/mail/message?folder=INBOX&id=42&validity="+tc.validity, nil)
+		r.Header.Set("X-Mail-Owner", "alice")
+		r.Header.Set("X-Mail-Account", tc.account)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.status || strings.Contains(w.Body.String(), "script") {
+			t.Fatalf("account=%s validity=%s: %d %s", tc.account, tc.validity, w.Code, w.Body.String())
+		}
+	}
+}
+
+type changedGenerationFake struct{ mailboxFake }
+
+func (*changedGenerationFake) GetEmail(context.Context, string, string) (*imap.Email, error) {
+	return &imap.Email{ID: "42", UIDValidity: 8, BodyPlain: "Different message"}, nil
+}
+
+func TestMessageRejectsGenerationChangedDuringFetch(t *testing.T) {
+	h := New(func(context.Context) (mailmcp.Dependencies, error) {
+		return mailmcp.Dependencies{IMAP: &changedGenerationFake{}, FromEmail: "me@icloud.com"}, nil
+	}, "https://mail.microapps.space", nil, nil, nil)
+	r := httptest.NewRequest("GET", "/api/mail/message?folder=INBOX&id=42&validity=7", nil)
+	r.Header.Set("X-Mail-Account", "me@icloud.com")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 409 || strings.Contains(w.Body.String(), "Different message") {
+		t.Fatalf("new mailbox generation leaked into old identity: %d %s", w.Code, w.Body.String())
+	}
 }
 
 func (f *mailboxFake) GetAttachment(context.Context, string, string, string) (*imap.AttachmentData, error) {
