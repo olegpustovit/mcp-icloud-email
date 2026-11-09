@@ -250,6 +250,10 @@ async function loadBody(force=false,target=current(s)) {
   catch(err){if(client===replica&&version===bodyRevision&&current(s)?.id===m.id){s.bodyError=s.offline?'This message body has not been cached on this device.':errorText(err);draw()}}
   finally{if(bodyRequests.get(m.id)===token)bodyRequests.delete(m.id)}
 }
+async function markOpenedRead(){
+ const m=current(s)
+ if((s.desktop||s.mobilePane==='reader')&&!s.picked.length&&m?.un&&m.f!=='drafts')await mutate('read',{read:true})
+}
 async function submitAuth(form) {
   const data=new FormData(form)
   if(data.has('email'))s.authEmail=data.get('email').trim()
@@ -396,8 +400,8 @@ async function act(action){
       const old=thread.findIndex(raw=>raw.key===s.threadMessage),index=Math.max(0,Math.min(thread.length-1,(old<0?thread.length-1:old)+(action==='thread-next'?1:-1))),raw=thread[index]
       s.threadMessage=raw.key;s.openMessages=[...new Set([...(s.openMessages||[]),raw.key])];draw();root.querySelector(`[data-thread-key="${CSS.escape(raw.key)}"]`)?.scrollIntoView({block:'nearest'});loadBody(false,message(raw,raw.folder));return
     }
-    case'next':case'prev':s.cur=Math.max(0,Math.min(visible(s).length-1,s.cur+(action==='next'?1:-1)));s.bodyError='';revealRow(visible(s),s);if(s.overlay||s.compose||pointerBusy||!paintSelection(root,s))draw();loadBody();return
-    case'open':if(m?.f==='drafts'){await editDraft();return}s.focus='reader';s.mobilePane='reader';if(m?.un)mutate('read',{read:true});break
+    case'next':case'prev':s.cur=Math.max(0,Math.min(visible(s).length-1,s.cur+(action==='next'?1:-1)));s.bodyError='';revealRow(visible(s),s);if(s.overlay||s.compose||pointerBusy||!paintSelection(root,s))draw();loadBody();await markOpenedRead();return
+    case'open':if(m?.f==='drafts'){await editDraft();return}s.focus='reader';s.mobilePane='reader';s.picked=[];await markOpenedRead();break
     case'edit-draft':await editDraft();return
     case'back':s.focus='list';s.mobilePane='list';break
     case'archive':case'trash':case'junk':{
@@ -560,7 +564,7 @@ root.addEventListener('click',e=>{
   const theme=e.target.closest('[data-theme-value]');if(theme){savePreference('theme',theme.dataset.themeValue);return}
   const pref=e.target.closest('[data-pref]');if(pref){s.keyEdit=null;let value=pref.dataset.value;if(value==='toggle')value=!s.prefs[pref.dataset.pref];if(pref.dataset.pref==='undoSeconds')value=Number(value);savePreference(pref.dataset.pref,value);return}
   const pick=e.target.closest('[data-pick]');if(pick){choose(pick.dataset.pick);return}
-  if(row){s.focus='list';s.mobilePane='reader';draw();loadBody()}
+  if(row){s.focus='list';s.mobilePane='reader';s.picked=[];draw();loadBody();markOpenedRead().catch(err=>say(errorText(err),true))}
 })
 function prepareBodyHTML(body){
  if(!body.bodyHTML)return

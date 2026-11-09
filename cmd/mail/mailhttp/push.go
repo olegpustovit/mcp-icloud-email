@@ -1,10 +1,21 @@
 package mailhttp
 
 import (
+	"net/http"
+
+	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/olegpustovit/mcp-icloud-email/internal/components/auth"
 	"github.com/olegpustovit/mcp-icloud-email/internal/components/mailsync"
-	"net/http"
 )
+
+type pushRegistration struct {
+	Subscription struct {
+		webpush.Subscription
+		ExpirationTime *uint64 `json:"expirationTime"`
+	} `json:"subscription"`
+	Name string `json:"name"`
+	Zone string `json:"zone"`
+}
 
 func (h *handler) push(w http.ResponseWriter, r *http.Request) {
 	if h.state == nil {
@@ -26,7 +37,7 @@ func (h *handler) push(w http.ResponseWriter, r *http.Request) {
 		}
 		respond(w, 200, map[string]any{"publicKey": key, "devices": devices})
 	case "POST":
-		var registration mailsync.PushRegistration
+		var registration pushRegistration
 		if !input(w, r, &registration) {
 			return
 		}
@@ -35,7 +46,7 @@ func (h *handler) push(w http.ResponseWriter, r *http.Request) {
 			respond(w, 401, map[string]string{"error": "login_required"})
 			return
 		}
-		device, err := h.state.SavePushDevice(r.Context(), owner, auth.Hash(cookie.Value), registration)
+		device, err := h.state.SavePushDevice(r.Context(), owner, auth.Hash(cookie.Value), mailsync.PushRegistration{Subscription: registration.Subscription.Subscription, Name: registration.Name, Zone: registration.Zone})
 		if err != nil {
 			respond(w, 400, map[string]string{"error": "device_could_not_be_registered"})
 			return
